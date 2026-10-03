@@ -27,12 +27,12 @@ describe('use-filesystem-service', () => {
 			)
 		).toHaveLength(1);
 	});
-	it('allows @effect/platform', () => {
+	it('allows effect/FileSystem', () => {
 		expect(
 			Testing.runRule(
 				rule,
 				'ImportDeclaration',
-				Testing.importDecl('@effect/platform')
+				Testing.importDecl('effect/FileSystem')
 			)
 		).toHaveLength(0);
 	});

@@ -8,7 +8,7 @@
  *  - `class FooVM extends Context.Service<FooVM>()(...)` — the service
  *    wrapping a VM (detection looks at the type argument's name)
  *  - `Layer.effect(FooVM, ...)` / `Layer.scoped(FooVM, ...)` — building
- *    a VM-tagged layer
+ *    a VM-tagged layer (the `Layer.scoped` spelling is legacy input)
  *
  * Detection is purely name-based ("ends with VM"), which is the
  * project's naming convention for view-model types.
@@ -32,7 +32,7 @@ import { AST, Diagnostic, Rule, RuleContext, Visitor } from 'effect-oxlint';
 const LayerFactoryName = Schema.Literals(['effect', 'scoped']).annotate({
 	title: 'LayerFactoryName',
 	description:
-		'`Layer.effect` and `Layer.scoped` — the factory positions where a VM tag appears as the first argument.'
+		'`Layer.effect` and legacy `Layer.scoped` calls where a VM tag appears as the first argument.'
 });
 
 const isLayerFactoryName = Schema.is(LayerFactoryName);

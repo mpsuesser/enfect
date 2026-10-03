@@ -7,10 +7,12 @@
  * service-defining factories:
  *  - `Layer.effect(...)` / `Layer.scoped(...)` / `Layer.succeed(...)`
  *  - `Context.Service<...>()(<key>, { make: ... })`
+ * `Layer.scoped` is legacy input; stable v4 also uses `Layer.effect` for
+ * scoped service construction.
  *
  * Exemptions:
  *  - An `Effect.gen` nested directly inside an `Effect.fn` /
- *    `Effect.fnUntraced` wrapper is already traced.
+ *    `Effect.fnUntraced` wrapper already uses an explicit function wrapper.
  *  - The "factory body" `Effect.gen` itself — i.e., the one passed as
  *    the direct argument of `Layer.*` or as the value of `make:` in a
  *    `Context.Service` definition. That gen IS the service constructor,
@@ -45,7 +47,7 @@ const LayerFactoryName = Schema.Literals([
 ]).annotate({
 	title: 'LayerFactoryName',
 	description:
-		'`Layer.effect` / `Layer.scoped` / `Layer.succeed` — the factories that build service bodies.'
+		'Service-building `Layer.effect` / `Layer.succeed` factories and legacy `Layer.scoped` calls.'
 });
 
 const isLayerFactoryName = Schema.is(LayerFactoryName);
@@ -53,7 +55,7 @@ const isLayerFactoryName = Schema.is(LayerFactoryName);
 const EffectFnLikeName = Schema.Literals(['fn', 'fnUntraced']).annotate({
 	title: 'EffectFnLikeName',
 	description:
-		'`Effect.fn` and `Effect.fnUntraced` — already-traced wrappers; `Effect.gen` inside them is exempt.'
+		'`Effect.fn` and `Effect.fnUntraced` wrappers; `Effect.gen` inside them is exempt. Only named `Effect.fn` adds a span.'
 });
 
 const isEffectFnLikeName = Schema.is(EffectFnLikeName);

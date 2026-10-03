@@ -71,7 +71,20 @@ describe('require-schema-type-alias', () => {
 		expect(errors.length).toBe(0);
 	});
 
-	it('does not flag predicates created with Schema.is', () => {
+	it.each([
+		'is',
+		'isIncluding',
+		'isBetweenLength',
+		'isBetweenCodePoints',
+		'isBetweenSize',
+		'isBetweenProperties',
+		'isStartingWith',
+		'isEndingWith',
+		'makeFilter',
+		'makeFilterGroup',
+		'toEquivalence',
+		'toFormatter'
+	])('does not mistake Schema.%s utilities for schema values', (api) => {
 		const exportDecl = Testing.exportNamedDecl({
 			type: 'VariableDeclaration',
 			kind: 'const',
@@ -79,7 +92,7 @@ describe('require-schema-type-alias', () => {
 				{
 					type: 'VariableDeclarator',
 					id: Testing.id('isPastDueMembership'),
-					init: Testing.callOfMember('Schema', 'is')
+					init: Testing.callOfMember('Schema', api)
 				}
 			]
 		});

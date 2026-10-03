@@ -2,6 +2,8 @@
  * Flag `let` declarations whose nearest enclosing factory is a
  * Layer.effect / Layer.scoped / Layer.succeed call, or the second-call of a
  * Context.Service<...>()(..., { make: ... }) definition.
+ * `Layer.scoped` is recognized for legacy input; stable v4 uses `Layer.effect`
+ * for scoped service construction too.
  *
  * Outside those factories, `let` is fine — it's a common, unobjectionable
  * shape in pure helpers, tests, and narrow synchronous scopes. The pattern
@@ -32,7 +34,7 @@ const LayerFactoryName = Schema.Literals([
 ]).annotate({
 	title: 'LayerFactoryName',
 	description:
-		'Layer factories (`Layer.effect`, `Layer.scoped`, `Layer.succeed`) whose body owns service-internal state.'
+		'Service-owning `Layer.effect` / `Layer.succeed` factories, including legacy `Layer.scoped` input.'
 });
 
 const isLayerFactoryName = Schema.is(LayerFactoryName);

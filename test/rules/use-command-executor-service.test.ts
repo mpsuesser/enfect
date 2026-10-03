@@ -11,7 +11,8 @@ describe('use-command-executor-service', () => {
 			Testing.importDecl('node:child_process')
 		);
 		expect(errors).toHaveLength(1);
-		expect(errors[0]?.diagnostic.message).toContain('CommandExecutor');
+		expect(errors[0]?.diagnostic.message).toContain('ChildProcessSpawner');
+		expect(errors[0]?.diagnostic.message).toContain('effect/process');
 	});
 
 	it('flags import of child_process (without node: prefix)', () => {
@@ -29,7 +30,7 @@ describe('use-command-executor-service', () => {
 			Testing.runRule(
 				rule,
 				'ImportDeclaration',
-				Testing.importDecl('@effect/platform')
+				Testing.importDecl('effect/process')
 			)
 		).toHaveLength(0);
 	});

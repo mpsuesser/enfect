@@ -85,9 +85,15 @@ describe('prefer-namespace-imports', () => {
 		expect(errors.length).toBe(0);
 	});
 
-	it('ignores effect/unstable/* imports', () => {
-		const node = Testing.importDeclWithSpecifiers('effect/unstable/sql', [
-			Testing.importSpecifier('SqlClient')
+	it.each([
+		'effect/sql',
+		'effect/http',
+		'effect/http-api',
+		'effect/process',
+		'effect/encoding'
+	])('allows named imports from the stable area entrypoint %s', (source) => {
+		const node = Testing.importDeclWithSpecifiers(source, [
+			Testing.importSpecifier('Module')
 		]);
 		const errors = Testing.runRule(rule, 'ImportDeclaration', node);
 		expect(errors.length).toBe(0);

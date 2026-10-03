@@ -43,6 +43,7 @@
     "strict": true,
     "strictNullChecks": true,
     "target": "ESNext",
+    "types": ["bun"],
     "useUnknownInCatchVariables": true,
     "verbatimModuleSyntax": true
   },

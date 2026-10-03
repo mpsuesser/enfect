@@ -13,12 +13,12 @@ describe('avoid-process-env', () => {
 			)
 		).toHaveLength(1);
 	});
-	it('allows Config.string', () => {
+	it('allows Config.String', () => {
 		expect(
 			Testing.runRule(
 				rule,
 				'MemberExpression',
-				Testing.memberExpr('Config', 'string')
+				Testing.memberExpr('Config', 'String')
 			)
 		).toHaveLength(0);
 	});

@@ -2,6 +2,8 @@ import type { CreateRule } from '@oxlint/plugins';
 import type { ESTree } from 'effect-oxlint';
 
 import * as Effect from 'effect/Effect';
+import type * as Fn from 'effect/Function';
+import * as Schema from 'effect/Schema';
 
 import { Diagnostic, Rule, RuleContext } from 'effect-oxlint';
 
@@ -10,6 +12,17 @@ import { Diagnostic, Rule, RuleContext } from 'effect-oxlint';
  * be namespace imports from submodules instead.
  */
 const BARREL_PACKAGES = new Set(['effect']);
+
+const isFunctionExport = Schema.is(
+	Schema.Literals([
+		'absurd',
+		'cast',
+		'flow',
+		'hole',
+		'identity',
+		'pipe'
+	] satisfies ReadonlyArray<keyof typeof Fn>)
+);
 
 const rule: CreateRule = Rule.define({
 	name: 'no-barrel-imports',
@@ -40,10 +53,14 @@ const rule: CreateRule = Rule.define({
 					if (!imported || imported.type !== 'Identifier') continue;
 
 					const name = imported.name;
+					const local = specifier.local.name;
+					const suggestion = isFunctionExport(name)
+						? `import { ${name === local ? name : `${name} as ${local}`} } from "effect/Function"`
+						: `import * as ${local} from "effect/${name}"`;
 					return ctx.report(
 						Diagnostic.make({
 							node,
-							message: `Prefer \`import * as ${name} from "${src}/${name}"\` over named import from barrel package "${src}". Barrel imports are slower and bypass tree-shaking.`
+							message: `Prefer \`${suggestion}\` over a named import from "${src}" to keep the dependency on its owning module explicit.`
 						})
 					);
 				}

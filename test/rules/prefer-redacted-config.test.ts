@@ -20,6 +20,45 @@ const schemaStructCall = (struct: unknown) => ({
 });
 
 describe('prefer-redacted-config', () => {
+	it.each(['String', 'NonEmptyString'])(
+		'flags stable Config.%s and recommends a constraint-preserving replacement',
+		(api) => {
+			const errs = run(
+				Testing.callOfMember('Config', api, [
+					Testing.strLiteral('API_KEY')
+				])
+			);
+			expect(errs).toHaveLength(1);
+			expect(errs[0]?.diagnostic.message).toContain(
+				api === 'String'
+					? 'Config.Redacted("API_KEY")'
+					: 'Config.schema(Schema.Redacted(Schema.NonEmptyString), "API_KEY")'
+			);
+		}
+	);
+
+	it.each(['String', 'NonEmptyString', 'Redacted'])(
+		'allows non-secret stable Config.%s calls',
+		(api) =>
+			expect(
+				run(
+					Testing.callOfMember('Config', api, [
+						Testing.strLiteral('HOST')
+					])
+				)
+			).toHaveLength(0)
+	);
+
+	it('allows Config.Redacted for secrets', () => {
+		expect(
+			run(
+				Testing.callOfMember('Config', 'Redacted', [
+					Testing.strLiteral('API_KEY')
+				])
+			)
+		).toHaveLength(0);
+	});
+
 	// ── Detection 1: primitive loaders ──
 	describe('Config.string / Config.nonEmptyString', () => {
 		it('flags Config.string("API_KEY")', () => {
@@ -29,7 +68,7 @@ describe('prefer-redacted-config', () => {
 				])
 			);
 			expect(errs).toHaveLength(1);
-			expect(errs[0]?.diagnostic.message).toContain('Config.redacted');
+			expect(errs[0]?.diagnostic.message).toContain('Config.Redacted');
 			expect(errs[0]?.diagnostic.message).toContain('API_KEY');
 		});
 

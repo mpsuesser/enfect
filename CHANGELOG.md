@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.6.0 - Stable Effect 4.0.0
+
+### Changed
+
+- Target stable `effect@4.0.0` and align `@effect/vitest` to 4.0.0. Upgrade the compatible test stack to Vitest 5 / Vite+ 1.0, the rule SDK to `effect-oxlint@0.4.0`, and oxlint to 1.85.
+- Remove the unused `effect-oxlint@0.1.0` patch; the published SDK already uses `Context.Service` and needs no patch.
+- Update diagnostics and README examples to `Schema.TaggedError`, `Schema.decodeUnknownEffect` / `encodeEffect`, PascalCase Config constructors, stable area import paths, `ChildProcessSpawner`, and current collection / random APIs.
+- Publish unpublished npm versions automatically on main pushes, with verification and provenance. Serialize publishing, validate npm/JSR version agreement and release tags, and retain release-triggered JSR publication.
+
+### Fixed
+
+- Detect `Config.String` and `Config.NonEmptyString` secrets as well as legacy lowercase spellings. Recommend a redacted schema for non-empty secrets so validation is retained.
+- Avoid requiring schema type aliases for current schema checks, filters, equivalences, and formatters.
+- Preserve local aliases in barrel-import diagnostics and direct `pipe`, `flow`, and other function exports to `effect/Function` instead of nonexistent submodules.
+- Clarify defects versus typed failures, platform boundary placement, and import-style policy; remove obsolete API recommendations.
+
+### Verification
+
+- Retain all 73 rules and both generated presets. Add rule regressions and compile marked README examples and Effect imports against the installed stable release.
+- Pass all 789 tests across 75 files, lint, formatting, typechecking, and the build with the published `effect-oxlint@0.4.0`. Verify updated Config, schema-check, and import diagnostics through the built plugin in the real oxlint CLI.
+- Audit the rule API references against the installed 4.0.0 source and the stable migration findings from `opencode-effect-enforcer@0.3.0`. Lifecycle, partition-order, and transport changes require no runtime migration in this AST-only plugin.
+
 ## 0.5.0 - Anti-slop rules
 
 ### Added

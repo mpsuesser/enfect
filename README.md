@@ -8,6 +8,14 @@ An opinionated [oxlint](https://oxc.rs/docs/guide/usage/linter) plugin for [Effe
 
 The plugin ships **73 rules** namespaced under `effect/`, including all 16 rules from [`dmmulroy/anti-slop`](https://github.com/dmmulroy/anti-slop). Rules are implemented with the [`effect-oxlint`](https://github.com/mpsuesser/effect-oxlint) SDK and run as standard oxlint custom rules.
 
+The runtime and recommendations target **Effect 4.0.0 (stable)**. Area imports use
+`effect/http`, `effect/http-api`, `effect/process`, etc.; the old `unstable` paths
+are removed. APIs marked `@stability unstable` can still change in minor releases.
+Keep directly used Effect-family packages on the same release version.
+
+Development uses `@effect/vitest@4.0.0` with Vitest 5 and Vite+ 1.0. The published
+plugin is checked with oxlint 1.85; test and build tooling is not a consumer dependency.
+
 ## Installation
 
 ```sh
@@ -150,7 +158,7 @@ than the lowercase `object` parameter contract. Configure each independently.
 | Rule                                                                                                  | What it catches                                                                  |
 | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | [`avoid-any`](#avoid-any)                                                                             | `as any` and `as unknown as T` casts                                             |
-| [`avoid-data-tagged-error`](#avoid-data-tagged-error)                                                 | `Data.TaggedError` — use `Schema.TaggedErrorClass`                               |
+| [`avoid-data-tagged-error`](#avoid-data-tagged-error)                                                 | `Data.TaggedError` — use `Schema.TaggedError`                                    |
 | [`avoid-direct-json`](#avoid-direct-json)                                                             | `JSON.parse` / `JSON.stringify` — use `Schema.fromJsonString`                    |
 | [`avoid-direct-tag-checks`](#avoid-direct-tag-checks)                                                 | `x._tag === "..."` checks — use `$is` / `$match` / `Match`                       |
 | [`avoid-expect-in-if`](#avoid-expect-in-if)                                                           | `expect(...)` nested inside `if` blocks in tests                                 |
@@ -190,7 +198,7 @@ than the lowercase `object` parameter contract. Configure each independently.
 | [`prefer-match-over-switch`](#prefer-match-over-switch)                                               | `switch` statements — use `Match.value`                                          |
 | [`prefer-namespace-imports`](#prefer-namespace-imports)                                               | Named imports from Effect submodules — use namespace imports                     |
 | [`prefer-option-over-null`](#prefer-option-over-null)                                                 | `T \| null` / `T \| undefined` union types                                       |
-| [`prefer-redacted-config`](#prefer-redacted-config)                                                   | `Config.string("apiKey")` etc. for secret-looking keys                           |
+| [`prefer-redacted-config`](#prefer-redacted-config)                                                   | `Config.String("apiKey")` etc. for secret-looking keys                           |
 | [`require-effect-concurrency`](#require-effect-concurrency)                                           | `Effect.all` / `forEach` / `validate` without explicit `concurrency`             |
 | [`require-filter-metadata`](#require-filter-metadata)                                                 | `Schema.makeFilter` / `makeFilterGroup` missing identifier / title / description |
 | [`require-is-prefix-for-boolean-schema-field`](#require-is-prefix-for-boolean-schema-field)           | `Schema.Boolean` fields without a boolean predicate prefix                       |
@@ -219,20 +227,24 @@ const user = data as any;
 const config = JSON.parse(raw) as unknown as Config;
 
 // ✅
-const user = yield* Schema.decodeUnknown(User)(data);
-const config = yield* Schema.decodeUnknownString(Config)(raw);
+const user = yield* Schema.decodeUnknownEffect(User)(data);
+const config = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(AppConfig))(raw);
 ```
 
 ### `avoid-data-tagged-error`
 
-`Data.TaggedError` does not integrate with the Schema encode / decode pipeline. Use `Schema.TaggedErrorClass` so errors round-trip through RPC, serialization, and structured logging.
+`Data.TaggedError` does not integrate with the Schema encode / decode pipeline. Use `Schema.TaggedError` for public errors that need decoding, encoding, or RPC transport.
 
 ```ts
 // ❌
 class NotFound extends Data.TaggedError('NotFound')<{ id: string }> {}
+```
 
-// ✅
-class NotFound extends Schema.TaggedErrorClass<NotFound>('NotFound')(
+<!-- typecheck -->
+```ts
+import * as Schema from 'effect/Schema';
+
+class NotFound extends Schema.TaggedError<NotFound>()(
 	'NotFound',
 	{ id: Schema.String }
 ) {}
@@ -240,16 +252,22 @@ class NotFound extends Schema.TaggedErrorClass<NotFound>('NotFound')(
 
 ### `avoid-direct-json`
 
-`JSON.parse` produces `any` and `JSON.stringify` swallows schema shape. Use `Schema.fromJsonString(MySchema)` at typed boundaries or `Schema.UnknownFromJsonString` for unknown payloads.
+`JSON.parse` produces `any`; `JSON.stringify` does not validate a domain contract. Use `Schema.fromJsonString(MySchema)` at typed boundaries or `Schema.fromJsonString(Schema.Unknown)` for unknown payloads.
 
 ```ts
 // ❌
 const user: User = JSON.parse(raw);
 const body = JSON.stringify(payload);
+```
 
-// ✅
-const user = yield* Schema.decode(Schema.fromJsonString(User))(raw);
-const body = yield* Schema.encode(Schema.fromJsonString(Payload))(payload);
+<!-- typecheck -->
+```ts
+import * as Schema from 'effect/Schema';
+
+class User extends Schema.Class<User>('User')({ id: Schema.String }) {}
+const decodeUser = Schema.decodeUnknownEffect(Schema.fromJsonString(User));
+const encodeUser = Schema.encodeEffect(Schema.fromJsonString(User));
+const decodeUnknownJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 ```
 
 ### `avoid-direct-tag-checks`
@@ -265,7 +283,7 @@ switch (msg._tag) {
 }
 
 // ✅
-if (Result.$is('Success')(result)) return result.value;
+if (Result.isSuccess(result)) return result.success;
 return Match.value(msg).pipe(
 	Match.tag('Loaded', (m) => /* ... */),
 	Match.exhaustive
@@ -347,16 +365,16 @@ const obj = R.fromEntries(pairs);
 
 ### `avoid-node-imports`
 
-`node:*` imports tie domain code to a single runtime. Use `@effect/platform` abstractions so the same code runs on Node, Bun, Deno, and Workers. Dedicated rules cover the most common cases (`use-filesystem-service`, `use-path-service`, `use-command-executor-service`, `use-http-client-service`); this rule is the catch-all.
+`node:*` imports tie domain code to a single runtime. Use abstract services from `effect` and provide a platform implementation at the runtime boundary. Dedicated rules cover the most common cases (`use-filesystem-service`, `use-path-service`, `use-command-executor-service`, `use-http-client-service`); this rule is the catch-all.
 
 ```ts
 // ❌
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 
-// ✅  Provide a service or pass a `FromEffect`-shaped Layer
-import { Crypto } from '@effect/platform/Crypto';
-import { Stream } from 'effect/Stream';
+// ✅  Provide the platform layer at the runtime boundary
+import * as Crypto from 'effect/Crypto';
+import * as Stream from 'effect/Stream';
 ```
 
 ### `avoid-non-null-assertion`
@@ -403,13 +421,13 @@ const value = Option.match(maybeUser, {
 
 ### `avoid-platform-coupling`
 
-Packages under `packages/*/binding/` are the seam where platform-specific code lives — they import `@effect/platform-bun`, `@effect/platform-node`, etc. Code outside the `binding/` directory must stay platform-agnostic so it can run anywhere.
+Packages under `packages/*/binding/` wrap external systems using abstract services. This rule rejects concrete Bun platform imports there; provide platform layers at the application's runtime entry point.
 
 ```ts
-// ❌  packages/myapp/src/MyService.ts
+// ❌  packages/myapp/binding/index.ts
 import { BunHttpServer } from '@effect/platform-bun';
 
-// ✅  packages/myapp/binding/index.ts
+// ✅  packages/myapp/src/main.ts
 import { BunHttpServer } from '@effect/platform-bun';
 ```
 
@@ -423,8 +441,8 @@ const apiKey = process.env.API_KEY!;
 const port = parseInt(process.env.PORT ?? '3000');
 
 // ✅
-const apiKey = yield* Config.redacted('API_KEY');
-const port = yield* Config.integer('PORT').pipe(Config.withDefault(3000));
+const apiKey = yield* Config.Redacted('API_KEY');
+const port = yield* Config.Int('PORT').pipe(Config.withDefault(3000));
 ```
 
 ### `avoid-react-hooks`
@@ -467,7 +485,7 @@ export type User = typeof User.Type;
 
 ### `avoid-sync-fs`
 
-Synchronous `fs` calls block the event loop. Use `FileSystem` from `@effect/platform` for async, composable, testable file I/O.
+Synchronous `fs` calls block the event loop. Use `FileSystem` from `effect/FileSystem` for async, composable, testable file I/O.
 
 ```ts
 // ❌
@@ -482,7 +500,7 @@ yield* fs.writeFileString(path, data);
 
 ### `avoid-try-catch`
 
-`try` / `catch` discards the failure type and forces every caller to inspect a generic `unknown`. Use `Effect.try` or `Effect.tryPromise` with `Schema.TaggedErrorClass` to keep errors in the typed channel.
+`try` / `catch` does not expose failures in a function's return type. Use `Effect.try` or `Effect.tryPromise` with `Schema.TaggedError` to keep expected errors in the typed channel.
 
 ```ts
 // ❌
@@ -495,8 +513,8 @@ try {
 // ✅
 return (
 	yield* Effect.try({
-		try: () => JSON.parse(raw),
-		catch: () => new ParseFailed({ raw })
+		try: () => externalParser(raw),
+		catch: (cause) => new ParseFailed({ cause })
 	})
 );
 ```
@@ -521,7 +539,7 @@ declare module 'some-api' {
 
 ### `avoid-untagged-errors`
 
-`new Error(...)` and `instanceof Error` make every failure interchangeable. `Schema.TaggedErrorClass` gives each domain failure mode a tag that `catchTag` / `catchTags` can discriminate at the type level. Use `Schema.isSchemaError` when narrowing schema failures.
+`Schema.TaggedError` gives each domain failure mode a tag that `catchTag` / `catchTags` can discriminate at the type level. Use `Schema.isSchemaError` for decoder failures; schema constructors such as `makeEffect` fail directly with `SchemaIssue.Issue`.
 
 ```ts
 // ❌
@@ -529,9 +547,9 @@ throw new Error('User not found');
 if (err instanceof Error) return null;
 
 // ✅
-class UserNotFound extends Schema.TaggedErrorClass<UserNotFound>(
-	'UserNotFound'
-)('UserNotFound', { id: Schema.String }) {}
+class UserNotFound extends Schema.TaggedError<UserNotFound>()(
+	'UserNotFound', { id: Schema.String }
+) {}
 
 yield* Effect.fail(new UserNotFound({ id }));
 yield* effect.pipe(Effect.catchTag('UserNotFound', () => Effect.succeed(null)));
@@ -555,7 +573,7 @@ yield* Latch.await(latch);
 
 ### `casting-awareness`
 
-Every `as T` assertion is a checkpoint: is the cast redundant? Can generics or `Schema.decode` replace it? Does the upstream type need fixing? `as const` and `as never` are always allowed; everything else gets flagged so the reviewer notices.
+Every `as T` assertion is a checkpoint: is the cast redundant? Can generics or `Schema.decodeUnknownEffect` replace it? Does the upstream type need fixing? The rule exempts `as const` and `as never`; that exemption does not make an unchecked assertion sound.
 
 ```ts
 // ❌
@@ -563,7 +581,7 @@ const items = (data as Array<User>).filter((u) => u.active);
 
 // ✅
 const items =
-	yield* Schema.decodeUnknown(Schema.Array(User))(data).pipe(
+	yield* Schema.decodeUnknownEffect(Schema.Array(User))(data).pipe(
 		Effect.map(Arr.filter((u) => u.active))
 	);
 
@@ -591,7 +609,7 @@ Blanket `Effect.catch` / `Effect.catchCause` returning a default value silently 
 
 ```ts
 // ❌
-effect.pipe(Effect.catchAll(() => Effect.succeed(defaultUser)));
+effect.pipe(Effect.catch(() => Effect.succeed(defaultUser)));
 
 // ✅
 effect.pipe(
@@ -604,7 +622,7 @@ effect.pipe(
 
 ### `effect-promise-vs-trypromise`
 
-`Effect.promise` treats rejections as defects (unrecoverable). `Effect.tryPromise` captures them in the typed error channel so callers can `catchTag` them.
+`Effect.promise` treats rejections as defects outside the typed error channel. Defect/cause handlers can still observe them. Use `Effect.tryPromise` for expected rejections so callers can handle typed failures with `catchTag`.
 
 ```ts
 // ❌
@@ -643,16 +661,22 @@ const names: Array<string> = [];
 for (const user of users) {
 	if (user.active) names.push(user.name);
 }
+```
 
-// ✅
+<!-- typecheck -->
+```ts
+import * as Arr from 'effect/Array';
+import * as Result from 'effect/Result';
+
+declare const users: ReadonlyArray<{ readonly active: boolean; readonly name: string }>;
 const names = Arr.filterMap(users, (u) =>
-	u.active ? Option.some(u.name) : Option.none()
+	u.active ? Result.succeed(u.name) : Result.fail(undefined)
 );
 ```
 
 ### `no-barrel-imports`
 
-Named imports from the `effect` barrel pull the entire module graph and break tree-shaking. Import from the submodule instead.
+This stricter import policy makes each dependency's owning module explicit. Import namespaces from submodules; root function exports such as `pipe` and `flow` belong to `effect/Function`. This is a style policy, not a claim that named imports inherently disable tree-shaking.
 
 ```ts
 // ❌
@@ -708,7 +732,7 @@ const sorted = [...users].sort((a, b) => a.age - b.age);
 // ✅
 const sorted = Arr.sort(
 	users,
-	Order.mapInput(Order.number, (u: User) => u.age)
+	Order.mapInput(Order.Number, (u: User) => u.age)
 );
 ```
 
@@ -791,7 +815,7 @@ return Match.value(status).pipe(
 
 ### `prefer-namespace-imports`
 
-Named imports from `effect/*` submodules break tree-shaking and diverge from Effect's canonical idiom. Use namespace imports with the canonical alias (`Effect`, `Arr` for `effect/Array`, `Option`, `R` for `effect/Record`, etc.).
+Use namespace imports for helper modules with the canonical alias (`Arr` for `effect/Array`, `Option`, `R` for `effect/Record`, etc.). Named area imports such as `import { HttpClient } from 'effect/http'` remain valid.
 
 ```ts
 // ❌
@@ -817,26 +841,31 @@ function find(id: string): Option.Option<User> { ... }
 
 ### `prefer-redacted-config`
 
-Configuration keys whose name conventionally identifies a secret (`apiKey`, `authToken`, `password`, `privateKey`, `dsn`, etc.) must be loaded as `Config.redacted(...)` (or wrapped in `Schema.Redacted` inside a `Config.schema`) so the value stays masked in logs and `toString`.
+Configuration keys whose name conventionally identifies a secret (`apiKey`, `authToken`, `password`, `privateKey`, `dsn`, etc.) should use `Config.Redacted(...)` or `Schema.Redacted` inside `Config.schema`. For `Config.NonEmptyString`, retain the constraint with `Config.schema(Schema.Redacted(Schema.NonEmptyString), key)`. Legacy lowercase loaders are also detected. Redaction masks logging and inspection; it does not prevent intentional unwrapping or all encoding.
 
 ```ts
 // ❌
-const apiKey = yield* Config.string('apiKey');
+const apiKey = yield* Config.String('apiKey');
 const cfg =
 	yield* Config.schema(
 		Schema.Struct({
 			apiKey: Schema.String
 		})
 	);
+```
 
-// ✅
-const apiKey = yield* Config.redacted('apiKey');
-const cfg =
-	yield* Config.schema(
-		Schema.Struct({
-			apiKey: Schema.Redacted(Schema.String)
-		})
-	);
+<!-- typecheck -->
+```ts
+import * as Config from 'effect/Config';
+import * as Schema from 'effect/Schema';
+
+const apiKey = Config.Redacted('apiKey');
+const nonEmptyToken = Config.schema(Schema.Redacted(Schema.NonEmptyString), 'TOKEN');
+const cfg = Config.schema(
+	Schema.Struct({
+		apiKey: Schema.Redacted(Schema.String)
+	})
+);
 ```
 
 ### `require-effect-concurrency`
@@ -873,6 +902,9 @@ const PositiveInt = Schema.makeFilter((n: number) => n > 0, {
 
 Exported `Schema.Struct` / `Schema.TaggedStruct` / `Schema.Literals` constants don't carry a TypeScript type at the value name. Pair them with `export type Foo = typeof Foo.Type` so importers can refer to the inferred type.
 
+Guards, checks (`Schema.isIncluding`, `Schema.isBetweenLength`, etc.), filters,
+equivalences, and formatters are not schema values and do not need this alias.
+
 ```ts
 // ❌
 export const User = Schema.Struct({ id: Schema.String });
@@ -884,7 +916,7 @@ export type User = typeof User.Type;
 
 ### `throw-in-effect-gen`
 
-`throw` inside `Effect.gen` / `Effect.fn` / `Effect.fnUntraced` lands in the unrecoverable defect channel. Use `yield* Effect.fail(new MyError(...))` (or `yield* new MyTaggedError({ ... })`) to keep failures typed. The `try:` arm of `Effect.tryPromise` / `Effect.try` is excluded — that's the point of `try:`.
+`throw` inside `Effect.gen` / `Effect.fn` / `Effect.fnUntraced` becomes a defect outside the typed error channel. Use `yield* Effect.fail(new MyError(...))` (or `yield* new MyTaggedError({ ... })`) for expected failures. Direct thunks and the `try:` arm of `Effect.tryPromise` / `Effect.try` are excluded because those boundaries capture throws.
 
 ```ts
 // ❌
@@ -916,16 +948,23 @@ const ms = yield* Clock.currentTimeMillis;
 
 ### `use-command-executor-service`
 
-`child_process` / `node:child_process` ties code to Node's process model and yields untyped errors. Use `ChildProcessSpawner` + `ChildProcess` from `effect/unstable/process`, or `Command` + `CommandExecutor` from `@effect/platform`, for typed, scoped, composable process spawning.
+`child_process` / `node:child_process` ties code to Node's process model and yields untyped errors. Use `ChildProcessSpawner` + `ChildProcess` from `effect/process` for typed, scoped, composable process spawning. Provide the platform spawner layer at the runtime boundary.
 
 ```ts
 // ❌
 import { spawn } from 'node:child_process';
 const proc = spawn('git', ['status']);
+```
 
-// ✅
-import { Command } from '@effect/platform';
-const status = yield* Command.make('git', 'status').pipe(Command.string);
+<!-- typecheck -->
+```ts
+import * as Effect from 'effect/Effect';
+import { ChildProcess, ChildProcessSpawner } from 'effect/process';
+
+const status = Effect.gen(function* () {
+	const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+	return yield* spawner.string(ChildProcess.make('git', ['status']));
+});
 ```
 
 ### `use-console-service`
@@ -946,7 +985,7 @@ yield* Effect.logError('Failed').pipe(Effect.annotateLogs('cause', err));
 
 ### `use-filesystem-service`
 
-`fs`, `node:fs`, and `fs/promises` tie code to Node's runtime. The `FileSystem` service from `@effect/platform` is portable, layer-substitutable, and integrates with `Stream`, `Scope`, and the rest of Effect.
+`fs`, `node:fs`, and `fs/promises` tie code to Node's runtime. The `FileSystem` service from `effect/FileSystem` is portable, layer-substitutable, and integrates with `Stream`, `Scope`, and the rest of Effect.
 
 ```ts
 // ❌
@@ -954,14 +993,14 @@ import * as fs from 'node:fs/promises';
 const text = await fs.readFile(path, 'utf8');
 
 // ✅
-import { FileSystem } from '@effect/platform';
+import * as FileSystem from 'effect/FileSystem';
 const fs = yield* FileSystem.FileSystem;
 const text = yield* fs.readFileString(path);
 ```
 
 ### `use-http-client-service`
 
-Direct `http` / `https` imports give you a raw socket and untyped errors. Use `HttpClient`, `HttpClientRequest`, and `HttpClientResponse` for typed responses, automatic retries, and testable layer substitution.
+Direct `http` / `https` imports expose low-level transport handling. Use `HttpClient`, `HttpClientRequest`, and `HttpClientResponse` from `effect/http` for typed responses and testable layer substitution. Add retries explicitly, and only for proven-idempotent operations.
 
 ```ts
 // ❌
@@ -977,7 +1016,7 @@ const json = yield* client.get(url).pipe(
 
 ### `use-path-service`
 
-`node:path` is Posix-or-Windows-flavored depending on the runtime. The `Path` service from `@effect/platform` is explicit about which variant you're using and is testable / mockable.
+`node:path` is Posix-or-Windows-flavored depending on the runtime. The `Path` service from `effect/Path` is explicit about which variant you're using and is testable / mockable.
 
 ```ts
 // ❌
@@ -985,21 +1024,27 @@ import * as path from 'node:path';
 const full = path.join(dir, name);
 
 // ✅
-import { Path } from '@effect/platform';
+import * as Path from 'effect/Path';
 const path_ = yield* Path.Path;
 const full = path_.join(dir, name);
 ```
 
 ### `use-random-service`
 
-`Math.random()` is non-deterministic; tests can't pin it. The `Random` service threads a seed through the program so `Random.nextInt` is reproducible.
+`Math.random()` bypasses Effect's random service. Use `Random.withSeed` for repeatable sequences. `Random.nextIntBetween(min, max)` includes both endpoints by default; use `{ halfOpen: true }` to exclude the upper bound.
 
 ```ts
 // ❌
 const n = Math.floor(Math.random() * 100);
+```
 
-// ✅
-const n = yield* Random.nextIntBetween(0, 100);
+<!-- typecheck -->
+```ts
+import * as Random from 'effect/Random';
+
+const n = Random.nextIntBetween(0, 100, { halfOpen: true }).pipe(
+	Random.withSeed('example')
+);
 ```
 
 ### `use-temp-file-scoped`

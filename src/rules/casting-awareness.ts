@@ -48,7 +48,7 @@ const rule: CreateRule = Rule.define({
 					Diagnostic.make({
 						node,
 						message:
-							'Type assertion `as T` tells the compiler "trust me." Before casting, check: (1) is the cast redundant? (2) can generics or Schema.decode replace it? (3) does the upstream type need fixing? `as const` is always acceptable.'
+							'Type assertion `as T` tells the compiler "trust me." Before casting, check: (1) is the cast redundant? (2) can generics or Schema.decodeUnknownEffect replace it? (3) does the upstream type need fixing? `as const` is always acceptable.'
 					})
 				);
 			}

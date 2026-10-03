@@ -35,17 +35,17 @@ const isErrorConstructor = Schema.is(ErrorConstructor);
 // ---------------------------------------------------------------------------
 
 const NEW_MESSAGE =
-	'Avoid `new Error(...)` in Effect code. Use `Schema.TaggedErrorClass` for typed, tagged errors that compose with `catchTag`/`catchTags`. (EF-1)';
+	'Avoid `new Error(...)` in Effect code. Use `Schema.TaggedError` for typed, tagged errors that compose with `catchTag`/`catchTags`. (EF-1)';
 
 const INSTANCEOF_MESSAGE =
-	'Avoid `instanceof Error` in Effect code. Use `catchTag`/`catchTags` with `Schema.TaggedErrorClass` for domain failures, or `Schema.isSchemaError` for schema failures. (EF-30)';
+	'Avoid `instanceof Error` in Effect code. Use `catchTag`/`catchTags` with `Schema.TaggedError` for domain failures, or `Schema.isSchemaError` for decoder failures. Schema constructors such as `makeEffect` fail directly with `SchemaIssue.Issue`. (EF-30)';
 
 const rule: CreateRule = Rule.define({
 	name: 'avoid-untagged-errors',
 	meta: Rule.meta({
 		type: 'suggestion',
 		description:
-			'Disallow `new Error(...)` and `<expr> instanceof Error` — use `Schema.TaggedErrorClass` instead (EF-1)'
+			'Disallow `new Error(...)` and `<expr> instanceof Error` — use `Schema.TaggedError` instead (EF-1)'
 	}),
 	create: function* () {
 		const ctx = yield* RuleContext;

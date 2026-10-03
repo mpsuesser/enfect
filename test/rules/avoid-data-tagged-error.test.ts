@@ -13,12 +13,12 @@ describe('avoid-data-tagged-error', () => {
 			)
 		).toHaveLength(1);
 	});
-	it('allows Schema.TaggedErrorClass', () => {
+	it('allows Schema.TaggedError', () => {
 		expect(
 			Testing.runRule(
 				rule,
 				'MemberExpression',
-				Testing.memberExpr('Schema', 'TaggedErrorClass')
+				Testing.memberExpr('Schema', 'TaggedError')
 			)
 		).toHaveLength(0);
 	});

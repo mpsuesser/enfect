@@ -4,7 +4,8 @@ Thanks for your interest in contributing. This guide covers everything you need 
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) >= 1.3.0
+- [Bun](https://bun.sh) 1.4.0
+- Node.js 24.11 or newer in the 24.x line (used by Vite+ and Vitest 5)
 
 ## Setup
 
@@ -59,6 +60,18 @@ The `.vscode/` directory is gitignored. If you use VS Code, create `.vscode/sett
 ```
 
 This enables the workspace TypeScript SDK and tsgo for native type-checking.
+
+## Releases
+
+Bump `package.json` and `jsr.json` together and update `CHANGELOG.md`. Pushes to
+`main` run lint, format, tests, and typechecking, then publish unpublished npm
+versions with provenance. Existing npm versions are skipped; registry errors
+fail the workflow.
+
+Create a GitHub release with the matching tag (for example `v0.6.0`) to publish
+to JSR as well. Release and manual runs share the npm verification job, and JSR
+publishing waits for it. Publishing runs are serialized to prevent duplicate
+uploads from push and release events.
 
 ## Reporting Issues
 

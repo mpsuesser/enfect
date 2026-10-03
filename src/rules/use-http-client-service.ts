@@ -3,7 +3,7 @@
  *
  * Bans `http` / `https` / `node:http` / `node:https` imports. Effect's
  * `HttpClient`, `HttpClientRequest`, and `HttpClientResponse` from
- * `effect/unstable/http` give typed errors, composable request builders,
+ * `effect/http` give typed errors, composable request builders,
  * declarative retry/timeout, and layer-based testing.
  */
 import type { CreateRule } from '@oxlint/plugins';
@@ -20,14 +20,14 @@ const HttpImportSource = Schema.Literals([
 ]).annotate({
 	title: 'HttpImportSource',
 	description:
-		'Node `http` / `https` module import specifiers. Use `HttpClient` from `effect/unstable/http` with a platform layer (`BunHttpClient.layer` / `NodeHttpClient.layer`) instead.'
+		'Node `http` / `https` module import specifiers. Use `HttpClient` from `effect/http` with a platform layer (`BunHttpClient.layer` / `NodeHttpClient.layerUndici`) instead.'
 });
 
 const isHttpImportSource = Schema.is(HttpImportSource);
 
 const rule: CreateRule = Rule.banImport(isHttpImportSource, {
 	message:
-		'Avoid importing `http` / `https` / `node:http` / `node:https`. Use `HttpClientRequest`, `HttpClientResponse`, and `HttpClient` from Effect for typed errors, composable HTTP, and testable layer substitution. See the `effect-http-api` skill. (EF-9b)'
+		'Avoid importing `http` / `https` / `node:http` / `node:https`. Use `HttpClientRequest`, `HttpClientResponse`, and `HttpClient` from `effect/http` for typed errors, composable HTTP, and testable layer substitution. See the `effect-http-client` skill. (EF-9b)'
 });
 
 export default rule;

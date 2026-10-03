@@ -2,8 +2,9 @@
  * Secret-shaped configuration values that escape redaction surface in two
  * idiomatic ways:
  *
- *   1. Primitive loaders: `Config.string("API_KEY")` /
- *      `Config.nonEmptyString("GITHUB_TOKEN")` — should be `Config.redacted(...)`.
+ *   1. Primitive loaders: `Config.String("API_KEY")` /
+ *      `Config.NonEmptyString("GITHUB_TOKEN")` — should use redacted config.
+ *      Legacy lowercase loader names are also recognized for migration.
  *
  *   2. Struct fields: `Config.schema(Schema.Struct({ apiKey: Schema.String }))` —
  *      the `apiKey` field should wrap its inner schema in `Schema.Redacted(...)`.
@@ -59,19 +60,21 @@ const SecretKeyName = Schema.String.check(
 	Schema.annotate({
 		title: 'SecretKeyName',
 		description:
-			'Configuration key name that conventionally identifies a secret value. Such values must be loaded via `Config.redacted` or wrapped in `Schema.Redacted` so they stay redacted from logs and `toString`.'
+			'Configuration key name that conventionally identifies a secret value. Such values must be loaded via `Config.Redacted` or wrapped in `Schema.Redacted` so they stay redacted from logs and `toString`.'
 	})
 );
 
 const isSecretKeyName = Schema.is(SecretKeyName);
 
 const ConfigPrimitiveApi = Schema.Literals([
+	'String',
+	'NonEmptyString',
 	'string',
 	'nonEmptyString'
 ]).annotate({
 	title: 'ConfigPrimitiveApi',
 	description:
-		'`Config.*` primitive string loaders whose secret-looking key names should switch to `Config.redacted` to keep the loaded value redacted from logs.'
+		'Current and legacy `Config.*` string loaders whose secret-looking key names should use redacted configuration.'
 });
 
 const isConfigPrimitiveApi = Schema.is(ConfigPrimitiveApi);
@@ -154,7 +157,7 @@ const matchConfigSchemaStruct = (
 	);
 
 /**
- * Detection 1: `Config.string("API_KEY")` / `Config.nonEmptyString("TOKEN")`
+ * Detection 1: `Config.String("API_KEY")` / `Config.NonEmptyString("TOKEN")`
  * — primitive loaders called with a secret-shaped key literal.
  */
 const matchPrimitiveSecretCall = (
@@ -206,8 +209,14 @@ const findSecretSchemaFields = (
 // Rule
 // ---------------------------------------------------------------------------
 
-const primitiveMessageFor = (apiName: string, key: string): string =>
-	`Configuration key \`${key}\` looks like a secret. Use \`Config.redacted("${key}")\` instead of \`Config.${apiName}("${key}")\` so the loaded value stays redacted from logs and \`toString\`. (EF-29)`;
+const primitiveMessageFor = (apiName: string, key: string): string => {
+	// Preserve the non-empty constraint; Config.Redacted alone accepts empty strings.
+	const replacement =
+		apiName === 'NonEmptyString' || apiName === 'nonEmptyString'
+			? `Config.schema(Schema.Redacted(Schema.NonEmptyString), "${key}")`
+			: `Config.Redacted("${key}")`;
+	return `Configuration key \`${key}\` looks like a secret. Use \`${replacement}\` instead of \`Config.${apiName}("${key}")\` so the loaded value stays redacted from logs and \`toString\`. (EF-29)`;
+};
 
 const schemaFieldMessageFor = (key: string): string =>
 	`Field \`${key}\` inside \`Config.schema(...)\` looks like a secret. Wrap its inner schema in \`Schema.Redacted(...)\` (e.g. \`Schema.Redacted(Schema.String)\`) so the value stays redacted from logs and \`toString\`. (EF-29)`;
@@ -217,7 +226,7 @@ const rule: CreateRule = Rule.define({
 	meta: Rule.meta({
 		type: 'suggestion',
 		description:
-			'Flag secret-shaped configuration values that escape redaction: `Config.string("API_KEY")` / `Config.nonEmptyString("TOKEN")` should use `Config.redacted`, and `Schema.String` / `Schema.NonEmptyString` fields inside `Config.schema(Schema.Struct({...}))` should be wrapped in `Schema.Redacted`.'
+			'Flag secret-shaped configuration values that escape redaction: `Config.String("API_KEY")` should use `Config.Redacted`, while `Config.NonEmptyString("TOKEN")` needs `Config.schema(Schema.Redacted(Schema.NonEmptyString), "TOKEN")` to preserve validation. Fields inside `Config.schema(Schema.Struct({...}))` should be wrapped in `Schema.Redacted`.'
 	}),
 	create: function* () {
 		const ctx = yield* RuleContext;

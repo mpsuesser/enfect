@@ -21,12 +21,12 @@ describe('use-temp-file-scoped', () => {
 		).toHaveLength(1);
 	});
 
-	it('allows `import "@effect/platform"`', () => {
+	it('allows `import "effect/FileSystem"`', () => {
 		expect(
 			Testing.runRule(
 				rule,
 				'ImportDeclaration',
-				Testing.importDecl('@effect/platform')
+				Testing.importDecl('effect/FileSystem')
 			)
 		).toHaveLength(0);
 	});

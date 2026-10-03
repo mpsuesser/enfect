@@ -107,12 +107,12 @@ describe('avoid-node-imports', () => {
 	});
 
 	// ── Does not flag non-node: imports ──
-	it('allows @effect/platform', () => {
+	it('allows effect/Crypto', () => {
 		expect(
 			Testing.runRule(
 				rule,
 				'ImportDeclaration',
-				Testing.importDecl('@effect/platform')
+				Testing.importDecl('effect/Crypto')
 			)
 		).toHaveLength(0);
 	});

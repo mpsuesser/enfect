@@ -42,6 +42,17 @@ export default defineConfig({
 			'@typescript-eslint/no-explicit-any': 'error',
 			'@typescript-eslint/no-non-null-assertion': 'error',
 			'@typescript-eslint/no-extra-non-null-assertion': 'error',
+			'vitest/expect-expect': [
+				'warn',
+				{
+					assertFunctionNames: [
+						'expect',
+						'assert',
+						'Testing.expectDiagnostics',
+						'Testing.expectNoDiagnostics'
+					]
+				}
+			],
 			'vitest/require-to-throw-message': 'off'
 		},
 		overrides: [

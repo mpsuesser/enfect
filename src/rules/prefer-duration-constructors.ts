@@ -6,10 +6,10 @@
  * Detection covers two argument shapes:
  *  - Positional duration argument: `Effect.sleep(1000)`, `Schedule.spaced(250)`.
  *  - `duration` key inside an options-object argument:
- *    `Effect.timeoutOrElse(effect, { duration: 5000, onTimeout })`.
+ *    `Effect.timeoutOrElse(effect, { duration: 5000, orElse })`.
  *
- * `Schedule.intersect` / `Schedule.union` are NOT listed: they combine
- * Schedules, not numbers. The previous inclusion was a bug that produced
+ * Legacy `Schedule.intersect` / `Schedule.union` are NOT listed: they combined
+ * Schedules, not numbers. Their previous inclusion was a bug that produced
  * nonsensical diagnostics.
  */
 import type { CreateRule } from '@oxlint/plugins';
@@ -50,7 +50,7 @@ const ScheduleDurationApi = Schema.Literals([
 ]).annotate({
 	title: 'ScheduleDurationApi',
 	description:
-		'`Schedule.*` constructors that accept a Duration or a numeric milliseconds value. (`Schedule.intersect`/`Schedule.union` combine Schedules and are intentionally excluded.)'
+		'`Schedule.*` constructors that accept a Duration or a numeric milliseconds value. Schedule-combining APIs are intentionally excluded.'
 });
 
 const isEffectDurationApi = Schema.is(EffectDurationApi);

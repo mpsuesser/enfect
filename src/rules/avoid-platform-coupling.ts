@@ -1,6 +1,6 @@
 /**
  * Binding packages must stay platform-agnostic. They wrap external systems
- * (CLIs, APIs, databases) and should depend on `@effect/platform` abstract
+ * (CLIs, APIs, databases) and should depend on `effect` abstract
  * interfaces — never on `@effect/platform-bun` or `@effect/platform-node`
  * concrete implementations. Those layers belong in the runtime/entry-point.
  *
@@ -78,7 +78,7 @@ const isPlatformBunImportSource = Schema.is(PlatformBunImportSource);
 // ---------------------------------------------------------------------------
 
 const MESSAGE =
-	'Binding packages must be platform-agnostic. Import from `@effect/platform` (abstract interfaces) instead of `@effect/platform-bun` (concrete implementations). Platform layers belong in the runtime entry point.';
+	'Binding packages must be platform-agnostic. Import abstract services from `effect`, `effect/http`, or `effect/process` instead of concrete `@effect/platform-bun` implementations. Platform layers belong in the runtime entry point.';
 
 const rule: CreateRule = Rule.define({
 	name: 'avoid-platform-coupling',

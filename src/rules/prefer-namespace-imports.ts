@@ -47,10 +47,7 @@ const rule: CreateRule = Rule.define({
 				const src = decl.source.value;
 
 				// Named imports from effect submodules
-				if (
-					src.startsWith('effect/') &&
-					!src.startsWith('effect/unstable/')
-				) {
+				if (src.startsWith('effect/')) {
 					const submodule = src.slice('effect/'.length);
 					if (!NAMESPACE_MODULES.has(submodule)) return Effect.void;
 
@@ -66,7 +63,7 @@ const rule: CreateRule = Rule.define({
 						return ctx.report(
 							Diagnostic.make({
 								node,
-								message: `Use namespace imports for Effect submodules: \`${suggestion}\`. Named imports break tree-shaking and diverge from Effect conventions. (EF-4)`
+								message: `Use namespace imports for Effect helper modules: \`${suggestion}\`. This keeps module ownership explicit and follows the canonical alias convention. (EF-4)`
 							})
 						);
 					}
@@ -108,7 +105,7 @@ const rule: CreateRule = Rule.define({
 							return ctx.report(
 								Diagnostic.make({
 									node,
-									message: `Import \`${name}\` from its submodule: \`import * as ${alias} from "effect/${name}"\`. Barrel imports from "effect" are slower and break Effect conventions. (EF-4)`
+									message: `Import \`${name}\` from its submodule: \`import * as ${alias} from "effect/${name}"\`. Use the canonical helper-module import. (EF-4)`
 								})
 							);
 						}

@@ -30,12 +30,12 @@ describe('avoid-platform-coupling', () => {
 		).toHaveLength(1);
 	});
 
-	it('allows @effect/platform inside a binding package', () => {
+	it('allows abstract effect services inside a binding package', () => {
 		expect(
 			Testing.runRule(
 				rule,
 				'ImportDeclaration',
-				Testing.importDecl('@effect/platform'),
+				Testing.importDecl('effect/http'),
 				{ filename: BINDING }
 			)
 		).toHaveLength(0);

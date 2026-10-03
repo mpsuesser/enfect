@@ -4,6 +4,26 @@ import rule from '../../src/rules/no-barrel-imports.ts';
 import * as Testing from 'effect-oxlint/testing';
 
 describe('no-barrel-imports', () => {
+	it('recommends the owning Function module for aliased pipe', () => {
+		const node = Testing.importDeclWithSpecifiers('effect', [
+			Testing.importSpecifier('pipe', 'compose')
+		]);
+		const errors = Testing.runRule(rule, 'ImportDeclaration', node);
+		expect(errors).toHaveLength(1);
+		expect(errors[0]?.diagnostic.message).toContain(
+			'import { pipe as compose } from "effect/Function"'
+		);
+	});
+
+	it('preserves the namespace alias when moving a root module', () => {
+		const node = Testing.importDeclWithSpecifiers('effect', [
+			Testing.importSpecifier('Array', 'Arr')
+		]);
+		const errors = Testing.runRule(rule, 'ImportDeclaration', node);
+		expect(errors[0]?.diagnostic.message).toContain(
+			'import * as Arr from "effect/Array"'
+		);
+	});
 	it('flags named imports from "effect" barrel', () => {
 		const node = Testing.importDeclWithSpecifiers('effect', [
 			Testing.importSpecifier('Effect')
