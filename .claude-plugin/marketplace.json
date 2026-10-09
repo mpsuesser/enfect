@@ -1,0 +1,14 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "effect-enforcer",
+  "description": "Effect v4 skills, guidance, and pattern enforcement",
+  "owner": { "name": "Marc Suesser" },
+  "plugins": [
+    {
+      "name": "effect-enforcer",
+      "source": "./",
+      "description": "Effect v4 skills, guidance, and post-write pattern enforcement for Claude Code",
+      "category": "development"
+    }
+  ]
+}

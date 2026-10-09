@@ -23,30 +23,46 @@ export const loadGuidance = async (guidanceDirectory: string): Promise<string> =
   return documents.join("\n\n---\n\n")
 }
 
-const guidanceWithSkillHints = (pattern: Pattern.Value): string => {
+/** Load a bundled skill by its bare name; adapters may namespace the reference. */
+export type SkillReference = (skill: string) => string
+
+const bareSkill: SkillReference = (skill) => skill
+
+/** Return the remediation body for one pattern followed by its skill-load hints. */
+export const guidanceWithSkillHints = (
+  pattern: Pattern.Value,
+  skillReference: SkillReference = bareSkill
+): string => {
   const hints =
     pattern.suggestedSkills?.map((skill) =>
-      `If you have not loaded the \`${skill}\` skill, load it before continuing.`
+      `If you have not loaded the \`${skillReference(skill)}\` skill, load it before continuing.`
     ) ?? []
   return hints.length === 0 ? pattern.guidance : `${pattern.guidance}\n\n${hints.join("\n")}`
 }
+
+/** Order patterns from most to least severe. */
+export const bySeverity = (patterns: ReadonlyArray<Pattern.Value>): Array<Pattern.Value> =>
+  [...patterns].toSorted((left, right) => LEVEL_ORDER[left.level] - LEVEL_ORDER[right.level])
+
+/** Header and instructions shared by every adapter's review request. */
+export const feedbackPreamble = (header: string, filePath: string): ReadonlyArray<string> => [
+  `${header} review request:`,
+  `File: \`${filePath}\``,
+  "",
+  "I noticed potential Effect-pattern issues in the write you just completed.",
+  "Inspect this change now. If a warning is valid, revise the code before continuing.",
+  "If it is a false positive or intentional exception, briefly say so and continue.",
+  ""
+]
 
 /** Compose one severity-ordered, model-visible review request for a completed write. */
 export const buildPatternFeedback = (
   patterns: ReadonlyArray<Pattern.Value>,
   filePath: string
 ): string => {
-  const selected = [...patterns].toSorted((left, right) =>
-    LEVEL_ORDER[left.level] - LEVEL_ORDER[right.level]
-  )
+  const selected = bySeverity(patterns)
   return [
-    "opencode-effect-enforcer review request:",
-    `File: \`${filePath}\``,
-    "",
-    "I noticed potential Effect-pattern issues in the write you just completed.",
-    "Inspect this change now. If a warning is valid, revise the code before continuing.",
-    "If it is a false positive or intentional exception, briefly say so and continue.",
-    "",
+    ...feedbackPreamble("opencode-effect-enforcer", filePath),
     "Matched patterns:",
     ...selected.map((pattern) => `- ${pattern.name} [${pattern.level}]: ${pattern.description}`),
     "",

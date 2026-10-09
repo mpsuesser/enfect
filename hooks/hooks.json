@@ -1,0 +1,147 @@
+{
+  "description": "Inject Effect guidance at session start and review Effect patterns after file writes",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "session-start",
+              "1"
+            ],
+            "timeout": 120
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "session-start",
+              "2"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "session-start",
+              "3"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "session-start",
+              "4"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "session-start",
+              "5"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "session-start",
+              "6"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "session-start",
+              "7"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "session-start",
+              "8"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "session-start",
+              "9"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "session-start",
+              "10"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "session-start",
+              "11"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "session-start",
+              "12"
+            ],
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "post-tool-use"
+            ],
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

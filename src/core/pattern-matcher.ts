@@ -1,6 +1,7 @@
-import { Lang, type NapiConfig, parse, type Rule as AstGrepRuleDefinition } from "@ast-grep/napi"
+import type { Lang, NapiConfig, Rule as AstGrepRuleDefinition } from "@ast-grep/napi"
 import picomatch from "picomatch"
 
+import { loadAstGrep } from "./ast-grep.ts"
 import { type MatcherInput, Pattern, type Span } from "./pattern.ts"
 
 /** Blank JavaScript comments while preserving source offsets, strings, and line breaks. */
@@ -76,9 +77,11 @@ const location = (source: string, start: number, end: number): Pattern.MatchLoca
 }
 
 const language = (filePath: string): Lang | undefined => {
-  if (filePath.endsWith(".tsx") || filePath.endsWith(".jsx")) return Lang.Tsx
-  if (filePath.endsWith(".ts")) return Lang.TypeScript
-  if (filePath.endsWith(".js")) return Lang.JavaScript
+  const astGrep = loadAstGrep()
+  if (astGrep === undefined) return undefined
+  if (filePath.endsWith(".tsx") || filePath.endsWith(".jsx")) return astGrep.Lang.Tsx
+  if (filePath.endsWith(".ts")) return astGrep.Lang.TypeScript
+  if (filePath.endsWith(".js")) return astGrep.Lang.JavaScript
   return undefined
 }
 
@@ -88,10 +91,11 @@ const astLocations = (
   filePath: string | undefined
 ): ReadonlyArray<Pattern.MatchLocation> => {
   if (filePath === undefined) return []
+  const astGrep = loadAstGrep()
   const lang = language(filePath)
-  if (lang === undefined) return []
+  if (astGrep === undefined || lang === undefined) return []
   try {
-    const root = parse(lang, source).root()
+    const root = astGrep.parse(lang, source).root()
     const find = (matcher: string | NapiConfig) =>
       root.findAll(matcher).map((node) =>
         location(source, node.range().start.index, node.range().end.index)

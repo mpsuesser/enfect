@@ -1,11 +1,13 @@
 {
   "$schema": "https://www.schemastore.org/package.json",
   "name": "opencode-effect-enforcer",
-  "version": "0.4.0",
-  "description": "OpenCode V2 plugin for Effect v4 skills, guidance, and pattern enforcement",
+  "version": "0.5.0",
+  "description": "OpenCode V2 and Claude Code plugin for Effect v4 skills, guidance, and pattern enforcement",
   "keywords": [
     "opencode",
     "opencode-plugin",
+    "claude-code",
+    "claude-code-plugin",
     "effect",
     "effect-ts"
   ],
@@ -26,6 +28,9 @@
   "exports": "./src/opencode/index.ts",
   "files": [
     "src",
+    "dist",
+    "hooks",
+    ".claude-plugin",
     "skills",
     "guidance",
     "patterns",
@@ -34,13 +39,14 @@
     "LICENSE"
   ],
   "scripts": {
+    "build": "bun build src/claude/hook.ts --target=node --format=esm --external @ast-grep/napi --outfile dist/claude-hook.mjs",
     "fmt": "dprint fmt",
     "fmt:check": "dprint check",
     "lint": "oxlint -c oxlintrc.json",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "check": "bun run fmt:check && bun run lint && bun run typecheck",
-    "prepublishOnly": "bun run check && bun run test"
+    "prepublishOnly": "bun run build && bun run check && bun run test"
   },
   "dependencies": {
     "@ast-grep/napi": "^0.42.3",
