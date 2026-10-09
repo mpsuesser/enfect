@@ -2,7 +2,7 @@ import { Skill } from "@opencode/plugin"
 import { readdir, readFile } from "node:fs/promises"
 import path from "node:path"
 
-import { extractBody, parseFrontmatter } from "./frontmatter.ts"
+import { extractBody, parseFrontmatter } from "../core/frontmatter.ts"
 
 /** Load bundled directory skills as OpenCode V2 skill definitions. */
 export const loadSkills = async (skillsDirectory: string): Promise<ReadonlyArray<Skill.Info>> => {

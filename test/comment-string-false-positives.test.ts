@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
-import { matchesPattern, stripComments } from "../src/pattern-matcher.ts"
-import { Pattern } from "../src/pattern.ts"
+import { matchesPattern, stripComments } from "../src/core/pattern-matcher.ts"
+import { Pattern } from "../src/core/pattern.ts"
 import { requirePattern } from "./helpers/patterns.ts"
 
 describe("stripComments", () => {

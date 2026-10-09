@@ -1,9 +1,9 @@
 import type { Plugin } from "@opencode/plugin"
 
-import { buildPatternFeedback } from "./guidance.ts"
-import { matchesPattern } from "./pattern-matcher.ts"
-import { Pattern } from "./pattern.ts"
-import { actualProjection, type FileSnapshot, snapshotFile } from "./write-projection.ts"
+import { buildPatternFeedback } from "../core/guidance.ts"
+import { matchesPattern } from "../core/pattern-matcher.ts"
+import { Pattern } from "../core/pattern.ts"
+import { actualProjection, type FileSnapshot, snapshotFile } from "../core/write-projection.ts"
 
 interface PendingWrite {
   readonly files: ReadonlyArray<FileSnapshot>

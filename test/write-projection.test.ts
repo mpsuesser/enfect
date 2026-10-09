@@ -8,7 +8,7 @@ import {
   changedSpans,
   relativeToolPath,
   snapshotFile
-} from "../src/write-projection.ts"
+} from "../src/core/write-projection.ts"
 
 describe("write projection", () => {
   it("computes only added spans in final-output coordinates", () => {

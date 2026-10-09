@@ -2,13 +2,13 @@ import { Plugin } from "@opencode/plugin"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
+import { loadGuidance, withPluginPolicy } from "../core/guidance.ts"
+import { loadPatterns } from "../core/pattern-catalog.ts"
 import { consumeAgentOptOut } from "./agent-policy.ts"
 import { registerPatternEnforcement } from "./enforcer.ts"
-import { loadGuidance, withPluginPolicy } from "./guidance.ts"
-import { loadPatterns } from "./pattern-catalog.ts"
 import { loadSkills } from "./skills.ts"
 
-const packageDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
+const packageDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..")
 
 export default Plugin.define({
   id: "opencode.effect-enforcer",

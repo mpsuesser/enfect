@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { consumeAgentOptOut } from "../src/agent-policy.ts"
+import { consumeAgentOptOut } from "../src/opencode/agent-policy.ts"
 
 const agent = (setting: unknown) => ({
   request: { body: { "opencode-effect-enforcer": setting, existing: true } },

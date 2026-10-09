@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { loadSkills } from "../src/skills.ts"
+import { loadSkills } from "../src/opencode/skills.ts"
 
 describe("loadSkills", () => {
   it("constructs every bundled OpenCode skill", async () => {

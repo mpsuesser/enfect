@@ -3,10 +3,10 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { buildPatternFeedback } from "../src/guidance.ts"
-import { loadPatterns } from "../src/pattern-catalog.ts"
-import { matchesPattern } from "../src/pattern-matcher.ts"
-import { actualProjection, snapshotFile } from "../src/write-projection.ts"
+import { buildPatternFeedback } from "../src/core/guidance.ts"
+import { loadPatterns } from "../src/core/pattern-catalog.ts"
+import { matchesPattern } from "../src/core/pattern-matcher.ts"
+import { actualProjection, snapshotFile } from "../src/core/write-projection.ts"
 import { patterns, requirePattern } from "./helpers/patterns.ts"
 
 const temporaryDirectories: Array<string> = []

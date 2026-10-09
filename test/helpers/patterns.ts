@@ -1,7 +1,7 @@
 import path from "node:path"
 
-import { loadPatterns } from "../../src/pattern-catalog.ts"
-import type { Pattern } from "../../src/pattern.ts"
+import { loadPatterns } from "../../src/core/pattern-catalog.ts"
+import type { Pattern } from "../../src/core/pattern.ts"
 
 /** Absolute path to the package's authoritative pattern catalog. */
 export const PATTERNS_DIRECTORY = path.resolve(import.meta.dirname, "..", "..", "patterns")
