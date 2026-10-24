@@ -9,7 +9,7 @@ This skill covers the imperative HTTP server primitives. For the declarative, sc
 
 ## Effect Source Reference
 
-The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read the `effect@4.0.0` tag for this skill; main may be newer. These modules remain `@stability unstable` and may break in minor releases. Keep Effect-family packages on the same release.
+The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read the `effect@4.0.6` tag for this skill; main may be newer. These modules remain `@stability unstable` and may break in minor releases. Keep Effect-family packages on the same release.
 
 Key files:
 
@@ -184,10 +184,12 @@ const request = yield* HttpServerRequest.HttpServerRequest;
 
 request.method; // 'GET' | 'POST' | ... (uppercased)
 request.url; // path (+search), prefix-stripped if route was prefixed
-request.originalUrl; // as received
+request.originalUrl; // full absolute URL on Node when authority is available
 request.headers; // Headers — a lowercase-keyed string record
 request.cookies; // ReadonlyRecord<string, string> (parsed, cached)
 request.remoteAddress; // Option<string>
+request.peerAddress; // Option<string> — connecting peer, not the forwarded client
+request.protocol; // 'http' | 'https' | undefined — trusted scheme override
 HttpServerRequest.toURL(request); // Option<URL> — absolute URL from request.url + the host header; use for absolute redirects
 
 // Body accessors — each is cached, so reading twice is safe:
@@ -257,7 +259,15 @@ const body = yield* HttpServerRequest.schemaBodyJson(CreateTodo, {
 });
 ```
 
-Search params are parsed by the router and provided as the `HttpServerRequest.ParsedSearchParams` service (repeated keys become arrays). Outside the router, `HttpMiddleware.searchParamsParser` provides it — but it parses `new URL(request.originalUrl)`, which must be absolute. That holds for web-handler adapters (`HttpServerRequest.fromWeb`); on the Node adapter `originalUrl` is path-only and the middleware defects (500). On a raw Node app parse yourself: `HttpServerRequest.searchParamsFromURL(new URL(request.url, 'http://localhost'))`.
+Search params are parsed by the router and provided as the
+`HttpServerRequest.ParsedSearchParams` service (repeated keys become arrays).
+Outside the router, `HttpMiddleware.searchParamsParser` parses the absolute
+`request.originalUrl`. Node now constructs that URL from the transport and Host
+header (an absolute request target's authority wins a conflicting Host), while
+`request.url` stays path-only. Hostless HTTP/1.1 requests can still have a relative
+`originalUrl`; at that boundary use
+`HttpServerRequest.searchParamsFromURL(new URL(request.url, 'http://localhost'))`
+with an explicitly chosen base rather than assuming an absolute URL.
 
 ---
 
@@ -499,10 +509,29 @@ Two distinct mechanisms — pick the right one:
 ### Built-ins (`HttpMiddleware`)
 
 - `HttpMiddleware.logger` — logs each sent response with `http.method`/`http.url`/`http.status` annotations. **Added automatically** by `HttpRouter.serve` and `HttpRouter.toWebHandler` unless `{ disableLogger: true }`. Disable per route with `Layer.provide(HttpRouter.disableLogger)` or per effect with `HttpMiddleware.withLoggerDisabled`.
-- `HttpMiddleware.tracer` — creates a `kind: 'server'` span per request (default name `http.server ${method}`; the router adds an `http.route` attribute). **Always applied** inside the server pipeline — never add it yourself. Configure via the references `HttpMiddleware.SpanNameGenerator` and `HttpMiddleware.TracerDisabledWhen` (or `HttpMiddleware.layerTracerDisabledForUrls(['/health'])`). Request/response headers recorded as span attributes are redacted per the `Headers.CurrentRedactedNames` reference (defaults: `authorization`, `cookie`, `set-cookie`, `x-api-key`; entries are strings or RegExps) — extend it with `Layer.succeed(Headers.CurrentRedactedNames)([...])`, and use `Headers.redact(request.headers, names)` when logging headers yourself.
+- `HttpMiddleware.tracer` — creates a `kind: 'server'` span per request (default name is the method alone, e.g. `GET`; the router adds `http.route`). **Always applied** inside the pipeline — never add it yourself. Configure `SpanNameGenerator` / `TracerDisabledWhen` (or `layerTracerDisabledForUrls`). Header capture is opt-in: provide `HttpMiddleware.TracerHeaderFilter` with a `(name, phase) => boolean` predicate (`phase` is `'request' | 'response'`). Selected values are redacted per `Headers.CurrentRedactedNames` (defaults: `authorization`, `cookie`, `set-cookie`, `x-api-key`). Custom redaction lists replace defaults. Built-in URL tracing redacts credentials and sensitive query values via `UrlParams.CurrentRedactedNames`; avoid raw URLs in custom span names. 5xx responses mark server spans failed without changing application success (ordinary 4xx responses do not).
 - `HttpMiddleware.cors(options)` — handles OPTIONS preflight and appends CORS headers via a pre-response handler. Options: `{ allowedOrigins?: ReadonlyArray<string> | Predicate<string>, allowedMethods?, allowedHeaders?, exposedHeaders?, maxAge?, credentials? }`. Shortcut: `HttpRouter.cors(options)` is a ready-made global layer (merge it with your routes) — but it only accepts the `ReadonlyArray<string>` form of `allowedOrigins`; for a predicate wrap the middleware yourself: `HttpRouter.middleware(HttpMiddleware.cors({ allowedOrigins: pred }), { global: true })`.
-- `HttpMiddleware.xForwardedHeaders` — trusts `x-forwarded-host`/`x-forwarded-for`, rewriting `host` and `remoteAddress`.
-- `HttpMiddleware.searchParamsParser` — provides `ParsedSearchParams` outside the router. Requires an absolute `request.originalUrl` (web-handler adapters only — it defects on the Node adapter's path-only URLs; see section 2).
+- `HttpMiddleware.xForwardedHeaders({ trustedProxies })` — requires an IP-network list or IP-address predicate. It first checks `peerAddress`, then walks `X-Forwarded-For` right-to-left past trusted proxies. Only aligned forwarded host/proto lists are applied. `remoteAddress` becomes the selected client, `peerAddress` retains the connecting peer, and `protocol` carries the trusted scheme. `HttpServerRequest.toURL` never trusts `x-forwarded-proto` directly.
+- `HttpMiddleware.searchParamsParser` — provides `ParsedSearchParams` outside the router. Requires an absolute `request.originalUrl` (now also normal Node requests with authority; see section 2 for hostless requests).
+- `HttpMiddleware.decompression({ maxDecompressedSize? })` — lazily decodes gzip/deflate request bodies, reversing stacked encodings. It removes encoding/length headers from the decoded request view; `request.source` still exposes compressed data. The decompressed limit defaults to `MaxBodySize`, then 10 MiB. Unsupported coding gets 415; exceeding a buffered/decompressed size limit gets 413, while other parse failures remain 400.
+
+<!-- typecheck -->
+```ts
+import { HttpMiddleware, HttpRouter } from 'effect/http';
+import { IpNetwork } from 'effect/net';
+
+const TrustedProxy = HttpRouter.middleware(
+	HttpMiddleware.xForwardedHeaders({
+		trustedProxies: [IpNetwork.fromStringUnsafe('10.0.0.0/8')]
+	}),
+	{ global: true }
+);
+
+const DecodeUploads = HttpRouter.middleware(
+	HttpMiddleware.decompression({ maxDecompressedSize: '10 MiB' }),
+	{ global: true }
+);
+```
 
 ### Route-scoped middleware with `HttpRouter.middleware`
 
@@ -628,6 +657,18 @@ Layer.launch(Main).pipe(NodeRuntime.runMain);
 
 Variants: `NodeHttpServer.layerServer` (server only, no platform services), `layerHttpServices` (HttpPlatform + Etag + Node services only), `layerConfig(createServer, configWrappedOptions)` (read options from `Config`), `layerTest` (section 10). `makeHandler`/`makeUpgradeHandler` return raw Node `request`/`upgrade` listeners for mounting the app on a server you manage yourself. For TLS pass `() => https.createServer(tlsOptions)` as the server factory.
 
+Node server constructors also accept HTTP/2 server factories. HTTP/2 pseudoheaders
+are removed from ordinary headers, with `:authority` / `:scheme` honored.
+`NodeHttpServerRequest.toIncomingMessage` / `toServerResponse` now return HTTP/1
+or HTTP/2 unions; narrow them before using protocol-specific members.
+
+Response adapters omit bodies for 204, 205, and 304, and remove content-length
+for 204/205. Node aborts a response on content-length mismatch or stream failure
+after headers, instead of reporting a truncated body as complete. Invalid final
+statuses outside 200–599 fall back to 500. Node sends `100 Continue` only when the
+handler reads the body; unread uploads are drained up to 256 KiB before closing
+the connection.
+
 ### Bun
 
 ```ts
@@ -710,6 +751,11 @@ const WsRoute = HttpRouter.add('GET', '/ws', Effect.gen(function* () {
 - `request.upgrade` fails with `HttpServerError` (`RequestParseError` reason) when the request is not upgradeable — e.g. in plain web-handler adapters that lack upgrade support.
 - For socket combinators, close events, and client sockets see the `effect-socket` skill.
 
+Node HTTP/1.1 also supports raw non-WebSocket `Upgrade` protocols through the
+same accessor. Bun/Deno only support WebSocket. A successful upgrade is observed
+as status 101 by middleware. Prefer `HttpApiSchema.Upgrade` when it belongs in a
+typed HTTP API contract.
+
 ---
 
 ## 9. Static Files (`HttpStaticServer`)
@@ -719,15 +765,6 @@ it has no `contentLength` override. Explicit content types/headers take priority
 web files then use nonempty `File.type`, then extension inference. Ranges clamp
 to EOF and retain exact bigint offsets. HEAD and statuses 204/205/304 omit the
 body and finalize request resources without starting omitted Effect streams.
-
-`HttpRouter.toWebHandler` and the layer-based `HttpEffect` web handlers start
-building their layers when created. Construction failures reject requests with
-the build error. Own and dispose that handler lifetime explicitly.
-
-Bound server addresses use `NetAddress.SocketAddress`. Use `NetAddress.formatIp`
-for numeric IP display, `formatHost` for host/port socket APIs, and the server URL
-helpers for IPv6-safe URLs. Bun/Deno listener layers can fail with `ServeError`
-when address conversion fails.
 
 ```ts
 const StaticFiles = HttpStaticServer.layer({
@@ -744,6 +781,10 @@ const AppRoutes = Layer.mergeAll(ApiRoutes, StaticFiles);
 ```
 
 It serves files with correct MIME types, `accept-ranges: bytes` + single-range requests (`206`/`416`), conditional requests (`if-none-match`/`if-modified-since` → `304`), and is path-traversal safe. Misses fail with `RouteNotFound` (→ `404`). `HttpStaticServer.make(options)` returns the bare handler effect if you want to mount it yourself.
+
+`If-Range` permits a range only when it matches a strong ETag; weak tags and
+Last-Modified dates fall back to the full response. Directory-index redirects
+add a trailing slash while preserving the original mount prefix and query.
 
 ---
 
@@ -778,9 +819,19 @@ const { handler: appHandler, dispose: disposeApp } = HttpRouter.toWebHandler(
 - `HttpServer.layerServices` provides `HttpPlatform` + `Path` + weak `Etag` + a **noop FileSystem** — enough for routers that never touch disk. For real `HttpServerResponse.file`/multipart persistence in a web handler, provide `NodeHttpServer.layerHttpServices` (or the platform FileSystem/Path layers) instead.
 - `HttpEffect.fromWebHandler(handler)` adapts an existing `(Request) => Promise<Response>` into an HTTP effect.
 
+`HttpRouter.toWebHandler` and the layer-based `HttpEffect` web handlers start
+building their layers when created. Construction failures reject requests with
+the build error. Own and dispose that handler lifetime explicitly.
+
 ### Request scope semantics
 
 Every request runs in a fresh `Scope` closed after the response is sent — `Effect.addFinalizer` in a handler runs post-response. Streaming bodies transfer the scope to the stream (`HttpEffect.scopeTransferToStream`, applied automatically by the adapters), so it closes when the body finishes streaming. If the client disconnects mid-request, the handler fiber is interrupted with the `ClientAbort` annotation (logged as `499`).
+
+Cancelling/aborting a Web response body releases that scope even before its first
+pull. Pre-response handlers and logger-disable state are request-local, so a
+reused caller context does not leak them across requests. The unsafe pre-response
+append API takes a fiber context, not a request object; prefer the effectful API.
+Web-handler `dispose()` is idempotent and returns the same cleanup Promise.
 
 For failed handlers, request-scope finalizers receive the original failure even
 when boundary handling successfully sends an error response.
@@ -813,6 +864,11 @@ describe('todos', () => {
 ```
 
 (`BunHttpServer.layerTest` is the Bun equivalent. The pieces behind it: `HttpServer.makeTestClient` / `layerTestClient` build a client targeting the current server's address.)
+
+Bound server addresses use `NetAddress.SocketAddress`. Use `NetAddress.formatIp`
+for numeric IP display, `formatHost` for host/port socket APIs, and the server URL
+helpers for IPv6-safe URLs. Bun/Deno listener layers can fail with `ServeError`
+when address conversion fails.
 
 ---
 
@@ -967,7 +1023,7 @@ describe('health', () => {
 6. **Adding `HttpMiddleware.tracer` or `HttpMiddleware.logger` manually to `HttpRouter.serve`** — the tracer is always applied by the pipeline and the logger is added by default. Configure with `SpanNameGenerator`/`TracerDisabledWhen` references and the `disableLogger` option / `HttpRouter.disableLogger` layer.
 7. **Passing multipart limits as options** — `Multipart.MaxFileSize`, `MaxFieldSize` (default 10 MiB), `MaxParts`, and `HttpServerRequest.MaxBodySize` are `Context.Reference`s. Set them with `Layer.succeed(Multipart.MaxFileSize)(n)` or `Effect.provideService`.
 8. **Calling `request.multipart` without `FileSystem`/`Path`** — it persists parts to temp files and requires `Scope | FileSystem | Path`. The Node/Bun server layers provide them; `HttpServer.layerServices` only has a **noop** FileSystem (fine for routing tests, broken for real uploads and `HttpServerResponse.file`).
-9. **Using `HttpRouter.params`/`schemaParams`/`schemaPathParams` outside a matched route** — they need `RouteContext`, which only the router provides. In plain `HttpEffect` handlers read `request.url` yourself; `HttpMiddleware.searchParamsParser` provides `ParsedSearchParams` but only where `originalUrl` is absolute (web-handler adapters) — on Node use `HttpServerRequest.searchParamsFromURL(new URL(request.url, 'http://localhost'))`.
+9. **Using `HttpRouter.params`/`schemaParams`/`schemaPathParams` outside a matched route** — they need `RouteContext`, which only the router provides. `HttpMiddleware.searchParamsParser` can provide `ParsedSearchParams` for absolute original URLs, including normal Node requests; hostless requests need an explicitly chosen URL base.
 10. **Forgetting cookie setters are effectful** — `setCookie`/`setCookies`/`expireCookie` return `Effect<_, CookiesError>`; the synchronous variants are `setCookieUnsafe`/`setCookiesUnsafe`/`expireCookieUnsafe` (and they throw on invalid input).
 11. **Hand-rolling 404/500 mapping for schema and missing-value errors** — `Schema.SchemaError` already becomes `400` and `NoSuchElementError` becomes `404` at the boundary; implement `HttpServerRespondable.symbol` on domain errors instead of try/catch pyramids.
 12. **Assuming handlers run to completion** — routes are interruptible; a client disconnect interrupts the fiber (`499`). Pass `{ uninterruptible: true }` to `HttpRouter.add` for side effects that must finish, and remember a plain server-shutdown interrupt maps to `503`.

@@ -16,7 +16,7 @@ implementations must supply `codecFor` (see `effect-rpc-client` /
 `effect-rpc-server`). JSON, NDJSON, and JSON-RPC formats use
 their wire representation; the new SchemaBinary transport has its own codecs.
 
-The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read the `effect@4.0.0` tag for this skill; main may be newer. These APIs remain `@stability unstable` and may break in minor releases despite the shorter imports. Keep Effect-family packages on the same release.
+The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read the `effect@4.0.6` tag for this skill; main may be newer. These APIs remain `@stability unstable` and may break in minor releases despite the shorter imports. Keep Effect-family packages on the same release.
 
 Key files:
 
@@ -62,6 +62,33 @@ Deep subpath imports also work (the package exports a `./*` wildcard), e.g. `imp
 ---
 
 ## 1. Defining RPCs — `Rpc.make`
+
+### Codec parse options
+
+`Rpc.ParseOptions` annotates payload, success, streamed chunks, and exit codecs
+on **both** peers. It defaults to `SchemaAST.defaultParseOptions`. Set it with
+`rpc.annotate` or `group.annotateRpcs` (not a group-only annotation).
+`concurrency` lets effectful product/array transformations run concurrently so
+`Effect.request` decoders can share resolver batches; choose an explicit bound.
+
+<!-- typecheck -->
+```ts
+import { Rpc, RpcGroup } from 'effect/rpc';
+import * as Schema from 'effect/Schema';
+
+const Lookup = Rpc.make('Lookup', {
+	payload: { ids: Schema.Array(Schema.String) },
+	success: Schema.Array(Schema.String)
+});
+
+const LookupRpcs = RpcGroup.make(Lookup).annotateRpcs(Rpc.ParseOptions, {
+	onExcessProperty: 'error',
+	concurrency: 8
+});
+```
+
+These options control schemas, not envelope framing. NDJSON malformed-frame
+handling belongs to `RpcSerialization` (see the client/server skills).
 
 ```ts
 Rpc.make(tag, {

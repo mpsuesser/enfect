@@ -9,7 +9,7 @@ Everything ships from the `effect` package under `effect/rpc` — there is no `@
 
 ## Effect Source Reference
 
-The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read the `effect@4.0.0` tag for this skill; main may be newer. These APIs remain `@stability unstable` and may break in minor releases. Keep Effect-family packages on the same release.
+The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read the `effect@4.0.6` tag for this skill; main may be newer. These APIs remain `@stability unstable` and may break in minor releases. Keep Effect-family packages on the same release.
 
 Key files:
 
@@ -211,7 +211,7 @@ const ServerLayer = RpcServer.layer(UserRpcs, {
 	concurrency: 'unbounded', // default
 	disableFatalDefects: false, // default — see below
 	disableTracing: false,
-	spanPrefix: 'RpcServer', // span per request: `${spanPrefix}.${tag}`
+	spanPrefix: 'RpcServer', // explicit opt-in prefix; absent: tag alone
 	spanAttributes: { service: 'users' }
 }).pipe(
 	Layer.provide(UsersLive),
@@ -226,7 +226,7 @@ Option semantics (verified against `makeNoSerialization`):
 - **`concurrency: number | 'unbounded'`** (default `'unbounded'`) — a single `Semaphore` for the **whole server instance**, shared across all clients and requests; it is not per-connection. `Rpc.fork(...)` opts an individual handler out.
 - **`disableFatalDefects: boolean`** (default `false`) — by default a defect in a handler (a `die` with no interruption) is treated as a protocol-level fault: the server sends a connection `Defect` message and the client fails **every in-flight request on that connection** with `Cause.die`. With `true`, the defect is delivered as that one request's `Exit`. Production servers usually want `true`. Either way the defect crosses the wire encoded with the rpc's defect schema — the default `Schema.Defect()` keeps an `Error`'s name/message but drops stacks; declare `defect: Schema.Defect({ includeStack: true })` on the contract (see the `effect-rpc-api` skill) to preserve them.
 - **Undecodable payloads** never reach the handler: the server answers that one request with a die exit carrying the schema issue string (regardless of `disableFatalDefects`); the connection stays up.
-- **`disableTracing` / `spanPrefix` / `spanAttributes`** — each request runs in a span named `${spanPrefix}.${tag}` (default prefix `RpcServer`), with the client's span as parent when the transport supports span propagation.
+- **`disableTracing` / `spanPrefix` / `spanAttributes`** — each request runs in a server-kind span named after its RPC tag alone, or `${spanPrefix}.${tag}` with an explicit prefix. Attributes include `rpc.system.name: 'effect_rpc'` and `rpc.method`; custom attributes override defaults. The client's span is parent when the protocol supports propagation.
 
 `RpcServer.make(group, options?)` is the Effect form — `Effect<never, ...>` that runs the server loop forever; `layer` is exactly `Layer.effectDiscard(Effect.forkScoped(make(group, options)))`.
 
@@ -375,7 +375,7 @@ Provide exactly one `RpcSerialization` layer. The load-bearing property is `incl
 | Layer | Content-Type | Framed? | Notes |
 |---|---|---|---|
 | `RpcSerialization.layerJson` | `application/json` | no | whole-payload JSON |
-| `RpcSerialization.layerNdjson` | `application/ndjson` | yes | newline-delimited JSON |
+| `RpcSerialization.layerNdjson` | `application/x-ndjson` | yes | newline-delimited JSON |
 | `RpcSerialization.layerJsonRpc({ contentType? })` | `application/json` | no | JSON-RPC 2.0 interop |
 | `RpcSerialization.layerNdJsonRpc({ contentType? })` | `application/json-rpc` | yes | JSON-RPC 2.0, newline-framed |
 | `RpcSerialization.layerSchemaBinary(options?)` | `application/vnd.effect.rpc+schema-binary` | yes | schema-derived binary payloads and envelopes |
@@ -413,10 +413,23 @@ Rules, verified against the protocol implementations and the e2e matrix:
 - The response `content-type` is the serialization's `contentType`.
 - `RpcSerialization.layerJsonRpc()` / `layerNdJsonRpc()` speak JSON-RPC 2.0: rpc tags map to `method`, batched arrays are preserved, and internal signals travel as `@effect/rpc/Ack`-style methods. Use for interop with non-Effect JSON-RPC clients.
 
+NDJSON skips empty LF/CRLF lines, not malformed nonempty frames: those throw
+`RpcSerialization.NdjsonDecodeError` with the original `cause`. Its corrected
+`application/x-ndjson` content type remains compatible with older Effect HTTP
+peers. Do not depend on silent recovery from malformed frames.
+
+Annotate RPCs with `Rpc.ParseOptions` to control payload/result/chunk/exit codecs
+on both sides (`SchemaAST.defaultParseOptions` by default). In particular,
+`concurrency` enables bounded concurrent effectful schema transformations and
+resolver batching; see `effect-rpc-api` for an independent example.
+
+Response encoding failures are reported to `ErrorReporter` and end server spans
+as encoding defects, including early-exit encoding failures. A failure to encode
+a reply is not a successful handler result on the wire.
+
 Client and server must use the **same** serialization.
 
-NDJSON skips malformed lines so later frames still decode; JSON-RPC skips
-non-object messages and checks notification method types before interpreting
+JSON-RPC skips non-object messages and checks notification method types before interpreting
 internal messages. Continue validating procedure payloads through the contract.
 Custom encoded-interrupt consumers must allow `fiberId: null` as well as
 `undefined`, matching JSON-encoded `RpcMessage.ExitEncoded` values.

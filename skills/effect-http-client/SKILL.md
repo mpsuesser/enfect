@@ -18,7 +18,7 @@ for HTTP value schemas. Import Undici-specific APIs from
 `@effect/platform-node/Undici`; the transport layer owns their initialization.
 HTTP `QUERY` is supported; configure CORS `allowedMethods` explicitly if needed.
 
-The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read the `effect@4.0.0` tag for this skill; main may be newer. APIs tagged `@stability unstable`, including these HTTP modules and Undici integration, may break in minor releases. Keep Effect-family packages on the same release.
+The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read the `effect@4.0.6` tag for this skill; main may be newer. APIs tagged `@stability unstable`, including these HTTP modules and Undici integration, may break in minor releases. Keep Effect-family packages on the same release.
 
 Key files:
 
@@ -264,6 +264,36 @@ Header names are normalized to lowercase. All of these are dual (data-first and 
 ### Web interop
 
 `HttpClientRequest.fromWeb(webRequest)` converts a Web `Request` for pass-through proxying; `toWeb`/`toWebResult` convert back — `Stream` bodies become `ReadableStream`s using the ambient context (`toWebResult` accepts a `context` option).
+
+### Request compression and raw upgrades
+
+`HttpClientRequest.compressBody('gzip' | 'deflate', { minSize? })` returns
+`Effect<HttpClientRequest>` with no typed error. The default threshold is 1024
+bytes. Unknown-length streams compress lazily; empty, FormData, raw, already
+encoded, and known small bodies are left alone. Compress once **before** request
+execution/retries rather than recomputing compressed bytes on each attempt.
+
+<!-- typecheck -->
+```ts
+import { Effect } from 'effect';
+import { HttpClient, HttpClientRequest } from 'effect/http';
+
+const upload = Effect.gen(function* () {
+	const client = yield* HttpClient.HttpClient;
+	const request = yield* HttpClientRequest.post('https://example.com/import').pipe(
+		HttpClientRequest.bodyText('a sufficiently large upload body'),
+		HttpClientRequest.compressBody('gzip', { minSize: 1 })
+	);
+	return yield* client.execute(request);
+});
+```
+
+`HttpClientRequest.upgrade(request, protocol)` sets `Connection: Upgrade` and
+`Upgrade`. Node's raw HTTP client exposes a successful 101 via `response.upgrade`
+as a `Socket`; other statuses fail acquisition with `StatusCodeError` and leave
+the refusal body readable. Keep the owning scope alive while using the socket.
+Fetch and XMLHttpRequest reject upgrade requests with `TransportError` before
+sending. Custom `HttpClientResponse` implementations must supply `upgrade`.
 
 ---
 
@@ -591,6 +621,16 @@ const retried = HttpClient.retryTransient(
 
 `retryOn: 'errors-and-responses'` retries transient **successful responses** (e.g. a raw 503 with no `filterStatusOk`) as well as transient errors. `'errors-only'` ignores transient response statuses unless something (like `filterStatusOk`) has converted them to errors first. The `while` predicate is ignored in `'response-only'` mode.
 
+A valid `Retry-After` on a retried response is a **minimum** wait, not a
+replacement for a longer scheduled delay. Whole nonnegative seconds and HTTP
+dates are accepted; fractions, negative/exponent/non-finite numbers and invalid
+dates are ignored. Use `Headers.parseRetryAfter` (`Result<RetryAfter,
+HeaderParseError>`), `retryAfterDelay(value, nowEpochMillis)`, and
+`formatRetryAfter` rather than permissive number coercion. Constructors are
+`retryAfterDuration` / `retryAfterDateTime`; `parseHttpDate` / `formatHttpDate`
+handle date headers. Schema codecs are `Schema.RetryAfterFromString` and
+`Schema.DateTimeUtcFromHttpDate`.
+
 Bound every retry policy and keep exhaustion visible. After the retry combinator, preserve the terminal typed error and emit one redacted log/metric/span annotation with operation name, attempts, status/provider code when available, and provider request ID. Do not recover exhaustion to an empty/default success or log secrets/full response bodies.
 
 ```ts
@@ -691,9 +731,20 @@ const redirecting = client.pipe(HttpClient.followRedirects(5)); // default max 1
 
 `followRedirects` re-issues the request when status is 3xx and a `location` header is present. Note: the fetch transport delegates to `fetch`, which already follows redirects by default — `followRedirects` matters mainly for `NodeHttpClient.layerUndici` / `layerNodeHttp`, which do not follow. To take manual control under fetch, provide `FetchHttpClient.RequestInit` with `{ redirect: 'manual' }`.
 
+An invalid `Location` now returns the redirect response unchanged instead of
+dying. `HttpClientRequest.basicAuth` encodes credentials as UTF-8 before Base64,
+including non-ASCII usernames/passwords.
+
 ### Tracing
 
-Every request runs in a client span (default name `http.client {METHOD}`) with OTel-style attributes (`http.request.method`, `url.full`, `http.response.status_code`, ...), and the trace context is propagated via headers. Span request/response header attributes are redacted per `Headers.CurrentRedactedNames` (default: `authorization`, `cookie`, `set-cookie`, `x-api-key`). Control via `Context.Reference`s on `HttpClient`:
+Every request runs in a client span (default name is the HTTP method alone,
+e.g. `GET`) with OTel-style attributes (`http.request.method`, `url.full`,
+`http.response.status_code`, ...), and trace context is propagated via headers.
+4xx/5xx responses mark the span failed without changing the request's success
+channel. Header capture is **opt-in** through `TracerHeaderFilter`; selected
+values are redacted per `Headers.CurrentRedactedNames` (default:
+`authorization`, `cookie`, `set-cookie`, `x-api-key`). Control via
+`Context.Reference`s on `HttpClient`:
 
 ```ts
 // Stop propagating traceparent headers to a third party (real usage: OtlpExporter)
@@ -708,7 +759,7 @@ program.pipe(
 
 // Custom span names
 program.pipe(
-	Effect.provideService(HttpClient.SpanNameGenerator, (request) => `${request.method} ${request.url}`)
+	Effect.provideService(HttpClient.SpanNameGenerator, (request) => `upstream ${request.method}`)
 );
 
 // Record only selected request/response headers as span attributes
@@ -724,6 +775,15 @@ program.pipe(
 	Effect.provideService(Headers.CurrentRedactedNames, ['authorization', 'x-internal-token'])
 );
 ```
+
+URL credentials and sensitive query values are redacted in built-in spans,
+inspection, and error messages, without changing the transmitted URL. Query
+redaction uses the separate `UrlParams.CurrentRedactedNames` reference (defaults:
+`AWSAccessKeyId`, `Signature`, `sig`, `X-Goog-Signature`); custom lists **replace**
+defaults. `UrlParams.isRedactedName`, `redact`, and `redactUrl` support explicit
+redaction. Query inputs may contain `Redacted` values, which remain wrapped in
+the structured params; getters, `toRecord`, and `toString` unwrap them and can
+expose secrets. Do not put raw URLs in custom span names or logs.
 
 ---
 
@@ -754,6 +814,12 @@ const upload = (data: Stream.Stream<Uint8Array, unknown>) =>
 ```
 
 ### Abort semantics (important)
+
+`HttpClientResponse.toWeb(response)` returns `Option<Response>`: `Some` only
+for a fetch-backed response, and it is the **original** Web response. Calling it
+hands body ownership to Web APIs and disables GC-driven abort; consume or cancel
+the Web body exactly once, without also consuming Effect body accessors.
+`HttpClient.withScope` still closes the request when its scope ends.
 
 - Interrupting the request effect (timeout, race, scope close) aborts the in-flight request.
 - Reading `response.stream` aborts the connection **when the stream ends** — including early termination via `Stream.take`. This is how partial downloads release the socket.

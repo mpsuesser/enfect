@@ -8,7 +8,7 @@ You are an Effect TypeScript expert specializing in type-safe SQL database acces
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Inspect the `effect@4.0.0` tag for this skill; main may be newer. SQL APIs remain
+Inspect the `effect@4.0.6` tag for this skill; main may be newer. SQL APIs remain
 `@stability unstable` and may break in minor releases. Keep `effect` and all
 `@effect/sql-*` and platform dependencies on the same release.
 
@@ -159,7 +159,7 @@ yield*
 
 Transaction context is attached to the active `SqlClient` service instance. Queries join a transaction only when they run with that same client; avoid mixing clients or manually reserved connections for one atomic unit of work.
 
-A failed top-level `BEGIN` or nested `SAVEPOINT` is propagated as a typed `SqlError`; the wrapped effect does not run, and no rollback is attempted for the transaction or savepoint that never started. If a nested `SAVEPOINT` failure escapes the outer transaction body, the already-started outer transaction rolls back. Catching this typed failure does not repair the database transaction state: continue only if the driver/database still permits it. Commit and rollback command failures are treated as defects.
+A failed top-level `BEGIN` or nested `SAVEPOINT` is propagated as a typed `SqlError`; the wrapped effect does not run, and no rollback is attempted for the transaction or savepoint that never started. If a nested `SAVEPOINT` failure escapes the outer transaction body, the already-started outer transaction rolls back. Catching this typed failure does not repair the database transaction state: continue only if the driver/database still permits it. A failed COMMIT remains a **typed `SqlError`** when cleanup succeeds (or is unnecessary). Rollback/release cleanup failures remain defects.
 
 Nested savepoints are released after success or successful rollback by PostgreSQL,
 PGlite, MySQL, libSQL, and Node/Bun/React Native/WASM SQLite drivers. A release
@@ -169,18 +169,58 @@ previous behavior, suitable for dialects such as MSSQL without release support.
 
 `commit` accepts either SQL text or `(connection) => Effect<void, SqlError>` so
 drivers can inspect completion, while `onCommitFailure` performs cleanup on the
-same connection before release. Failed commit/cleanup still surface as defects,
-not a successful transaction result. SQLite drivers roll back transactions left
+same connection before release. If COMMIT and cleanup both fail, both causes are
+preserved as defects, never a successful transaction result. SQLite drivers roll back transactions left
 open by failed COMMIT (for example deferred foreign-key violations). A failed
 cleanup prevents reuse until a subsequent acquisition successfully retries that
 rollback; the database is not silently reopened.
 
 PostgreSQL can return a `ROLLBACK` command result for `COMMIT` after a caught
 statement error aborted the transaction. `PgClient` detects this and fails the
-transaction with a `SqlError` defect (`UnknownError`, operation `commit`). Catching
+transaction with a typed `SqlError` (`UnknownError`, operation `commit`). Catching
 a statement failure in application code does not restore PostgreSQL transaction
 state. Use a nested transaction/savepoint around a recoverable operation when the
 outer transaction must continue.
+
+`sql.afterCommit(effect)` queues infallible callbacks until the **outermost**
+successful commit. Successful savepoints transfer callbacks to their parent;
+rollback or failed COMMIT drops them. Outside a buffered transaction they run
+immediately. Deferred callbacks capture current services without the transaction,
+run uninterruptibly after commit, and log/ignore defects rather than undoing a
+committed write. Keep them short, not long-running jobs; registration from a fiber
+that outlives its transaction is a defect. Clients that bypass
+`makeWithTransaction` (such as SQLite Durable Objects) execute callbacks immediately.
+
+<!-- typecheck -->
+```ts
+import { Effect } from 'effect';
+import { SqlClient } from 'effect/sql';
+
+const update = Effect.gen(function* () {
+	const sql = yield* SqlClient.SqlClient;
+	return yield* sql.withTransaction(Effect.gen(function* () {
+		yield* sql`UPDATE accounts SET active = true WHERE id = ${'a1'}`;
+		yield* sql.afterCommit(Effect.logInfo('account activation committed'));
+	})).pipe(
+		Effect.provideService(SqlClient.BeginTransaction, 'BEGIN ISOLATION LEVEL SERIALIZABLE')
+	);
+});
+```
+
+`BeginTransaction` replaces only top-level BEGIN SQL, not savepoints; drivers
+without SQL-based transaction starts can ignore it. `Reactivity.invalidate` /
+`mutation` read from transaction context likewise defer until outer commit and
+drop invalidations on rollback. They do not join an enclosing `withBatch` after
+commit; a previously captured Reactivity service bypasses that deferral.
+
+Custom drivers must provide `SqlClient.driver` and pass `driver: 'my-driver'` to
+`SqlClient.make`. This is **driver identity**, not dialect: PGlite and PostgreSQL
+share a dialect but cluster storage must distinguish their connection semantics.
+The unstable `makeWithTransaction` now owns its connection scope:
+`acquireConnection(restore)` returns a scoped connection Effect, not a
+`[scope, connection]` tuple. Restore interruptibility around queued acquisition;
+register releases in the supplied scope. `begin(conn, statement)` receives the
+optional `BeginTransaction` override.
 
 ### Dialect Branching
 
@@ -490,6 +530,9 @@ const resolver = SqlResolver.ordered({ ... }).pipe(
 
 The `Migrator` module runs sequential, transactional migrations tracked in a `effect_sql_migrations` table.
 
+ClickHouse uses its dialect-specific ledger DDL and does not wrap migrations in
+unsupported transactions.
+
 ### Migration File Convention
 
 Files must be named `<id>_<name>.js`, `<id>_<name>.ts`, `<id>_<name>.mjs`, or `<id>_<name>.mts`, where `id` is a numeric identifier (e.g. `0001_create_users.ts`). Unsupported extensions are ignored by the file and glob loaders.
@@ -564,6 +607,10 @@ Migrator.fromBabelGlob(migrations);
 
 ### Migration Errors
 
+Migration execution failures now remain typed `MigrationError` values rather
+than being converted to defects. Handle/report them at the deployment boundary;
+do not treat failed migrations as a successful application startup.
+
 ```ts
 import * as Migrator from 'effect/sql/Migrator';
 
@@ -631,6 +678,21 @@ const main = program.pipe(Effect.provide(DatabaseLayer));
 
 ### Native PostgreSQL client and codecs
 
+Pool `idleTimeout` now defaults to **60 seconds** (was 10); set it explicitly to
+retain the old connection-retirement behavior. `acquireTimeout` bounds waiting
+for a checkout and fails with `SqlError` (reason `ConnectionError`) when exhausted,
+separately from connection establishment's `connectTimeout`. `keepAlive` is an
+optional idle duration that enables TCP keepalive probes.
+
+`onAcquire: Effect<void, never, R>` runs **per checkout**, not per physical
+socket, in the consuming fiber. It runs once per statement/stream outside a
+transaction and per transaction/reserve/listen/notify acquisition. Its services
+are captured at client construction, with consuming-fiber services taking
+precedence; constructor/layer requirements now reflect `R`. Hook finalizers end
+with the acquisition. Keep it cheap while holding the connection; with
+`makeClient({ acquireForStream: true })` it runs before a stream opens its own
+connection.
+
 `PgClient` uses `PgConnection` and `PgPool` for native binary queries, prepared
 statements, pipelining, streaming, cancellation, and notifications. Use `make`
 for a pool or `makeClient` for one connection. `types` accepts a `PgTypes.Registry`.
@@ -656,6 +718,12 @@ UTC session time or `PgTypes.timestamp(value)` for UTC fields in a timestamp col
 `executeRaw` returns `PgConnection.Result`. Binary `regclass` and `regclass[]`
 decode as unsigned numeric OIDs; cast to `text` in SQL when relation names are
 required.
+
+Binary `interval` preserves independent months, days, and bigint microseconds,
+including interval arrays and typed interval parameters; do not flatten calendar
+months/days into a fixed duration. Released `PgConnection` pins reject queries,
+streams, and listeners, ignore interrupt, and close a session released with work
+still in flight so it cannot affect the next borrower.
 
 Unregistered OIDs decode as UTF-8 text, suitable for scalar enum labels but not
 arbitrary binary types. Register custom scalar/array codecs through
@@ -685,6 +753,19 @@ when multiplexing is enabled, `multiplexConcurrency` defaults to 32.
 Driver releases also update production dependencies for D1, mysql2, and PGlite;
 keep the Effect-family package versions aligned when upgrading those adapters.
 
+`PgMigrator` dumps use resolved URL/socket/startup/TLS settings and keep passwords
+out of `pg_dump` argv. Optional TLS modes (`prefer` / `allow`) dump using
+`verify-full`, so a non-TLS server can reject the dump even if normal connections
+can fall back.
+
+SQL statement spans now use `Statement.spanName` / `spanTarget`: database
+namespace, server address/port, or database system, falling back to `sql.execute`.
+The Effect execution method is `effect.sql.method`, not `db.operation.name`.
+Transaction spans are internal with `effect.sql.transaction.*` events. With
+`Statement.SpanPropagationEnabled`, statement spans record
+`db.client.connection.wait_time_ms`; PostgreSQL adds `db.connect` covering the
+part of a newly created session's connection that the statement waited for.
+
 ### PgClient JSON and Notifications
 
 ```ts
@@ -709,7 +790,28 @@ services; `insertVoid` needs only input encoding services. D1 statement `.raw`
 returns the complete native result; read `.results` for rows. Durable Object SQL
 transactions support nested child rollback but no explicit async operations inside
 the transaction. Use `Statement.SpanPropagationEnabled` to opt into driver span
-parenting under `sql.execute`.
+parenting under the statement span (whose name follows `Statement.spanName`).
+
+Single-connection drivers retain exclusion for the whole statement/stream, not
+just acquisition. SQLite node/bun/in-memory WASM preserve the original typed SQL
+failure when SQLite already auto-rolled back; OPFS/React Native are unchanged.
+SQLite WAL setup contention retries within `busyTimeout` and setup failures are
+typed `SqlError` (Node read-only connections skip WAL initialization).
+MSSQL `withoutTransforms()` and procedure calls join the active transaction.
+ClickHouse exposes its native `.client`; early stream termination kills the
+server query instead of leaving it running.
+
+Reactive queries stop rerunning after failure rather than retaining a broken
+subscription. Applications can optionally augment `Reactivity.Keys` for typed
+key names/record IDs; libraries must not augment this global registry.
+`Model.Class.extend` retains inherited variant fields when extending SQL models.
+
+**SQL resolver isolation:** only the transaction connection separates batches.
+Request encoding uses each caller's context, but `execute` and result decoding
+use the **first entry's** context. Different tenant/auth services outside a
+transaction can therefore share a batch; use separate resolver instances or
+explicit tenant/auth values in the request and SQL. Caller context alone is not
+an authorization boundary.
 
 ### PGlite Setup
 

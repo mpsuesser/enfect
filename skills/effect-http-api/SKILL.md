@@ -22,7 +22,7 @@ the generator also accepts OpenAPI 3.2's native `query` operation.
 Generated multipart binary fields use `File | Blob` and dedicated `*Multipart`
 component exports. Keep generated imports aligned with the chosen transport.
 
-The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Inspect the `effect@4.0.0` tag for this skill; main may be newer. These APIs remain `@stability unstable` and may break in minor releases despite their shorter import paths. Keep `effect` and companion packages on the same release.
+The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Inspect the `effect@4.0.6` tag for this skill; main may be newer. These APIs remain `@stability unstable` and may break in minor releases despite their shorter import paths. Keep `effect` and companion packages on the same release.
 
 Key reference files:
 
@@ -187,7 +187,11 @@ HttpApiEndpoint.post('create', '/items', {
 });
 ```
 
-> **Constraint**: each payload schema must resolve to a **distinct** content-type. Two schemas claiming `application/json` raise `Multiple payload encodings for content-type: application/json` at construction time. Only one multipart payload per endpoint.
+> **Constraint**: buffered schemas sharing a content type and encoding form a
+> union. Conflicting encodings for one content type raise `Multiple payload
+> encodings for content-type: ...`. Only one multipart payload and one streaming
+> payload are supported; a streaming schema cannot share its media type with a
+> buffered schema.
 
 ### Multiple Success Schemas (Content Negotiation)
 
@@ -414,6 +418,68 @@ HttpApiEndpoint.post('uploadStream', '/upload/stream', {
 	success: Schema.String
 });
 ```
+
+### Streaming Bodies
+
+`HttpApiSchema.StreamUint8Array({ contentType?, maxBytes? })` works in both
+`payload` and `success`; unlike buffered `asUint8Array`, it passes a stream.
+`StreamNdjson({ schema, contentType?, maxBytes?, maxElementBytes? })` does the same
+for schema-decoded elements. Generated clients accept request streams without
+collecting them, and infer their service requirements; `HttpApiTest`
+preserves streams too. Handler body consumption is lazy, so consume the payload
+inside the request lifetime and handle stream failures there.
+
+Streaming payloads require a body-capable method. `StreamSse` remains response-only.
+
+<!-- typecheck -->
+```ts
+import { HttpApiEndpoint, HttpApiSchema } from 'effect/http-api';
+import * as Schema from 'effect/Schema';
+
+class ImportEvent extends Schema.Class<ImportEvent>('ImportEvent')({
+	id: Schema.String
+}) {}
+
+const importEvents = HttpApiEndpoint.post('importEvents', '/events', {
+	payload: HttpApiSchema.StreamNdjson({
+		schema: ImportEvent,
+		maxBytes: '100 MiB',
+		maxElementBytes: '1 MiB'
+	}),
+	success: Schema.Number
+});
+
+const download = HttpApiEndpoint.get('download', '/archive', {
+	success: HttpApiSchema.StreamUint8Array()
+});
+```
+
+NDJSON defaults to `application/x-ndjson` and a 1 MiB line limit. It accepts LF,
+CRLF, bare CR, a leading BOM, and a final line without a newline; empty lines are
+skipped, but malformed JSON, invalid UTF-8, or a failed element decode ends the
+stream. `maxBytes` has **no default** and does not fall back to `MaxBodySize`.
+`maxBytes` only applies to payloads; NDJSON line limits also govern
+decoding streamed responses. OpenAPI emits `x-effect-stream` metadata.
+
+Request parse failures become `HttpApiSchemaError` (`kind: 'Payload'`, 400).
+Limits become `HttpApiPayloadTooLarge` (413), with `limit: 'maxBytes' |
+'maxElementBytes'` and `size` holding the configured `ByteSize`, not bytes read.
+An excessive `Content-Length` can be rejected before invoking the handler;
+otherwise enforcement happens while reading. A response-stream failure aborts
+the body rather than producing a clean end or a new HTTP error response. NDJSON
+has no typed mid-stream error schema; use response-only `StreamSse` for that.
+
+### Raw HTTP/1.1 Upgrade Success
+
+`success: HttpApiSchema.Upgrade({ protocol: 'tcp' })` declares a 101 response.
+It must be the endpoint's only success schema, with no payload; `websocket` is
+rejected (use `HttpServerRequest.upgrade` / `Socket.makeWebSocket` instead).
+The handler receives `socket`; acquiring its reader sends the handshake, so
+declared failures can still render before acquisition. A request not asking for
+the protocol gets 426. Generated clients send upgrade headers and return
+`{ headers, socket }`; OpenAPI documents 101. Use Node's raw HTTP transport:
+Fetch/XHR reject these requests before sending, and Bun/Deno servers only
+support WebSocket upgrades.
 
 ## Groups
 
@@ -777,17 +843,24 @@ handlers.handle('getUser', ({ params }) =>
 
 ### Schema Validation Errors
 
-When a request fails decoding (bad params, invalid query, malformed body), the framework wraps the underlying `Schema.SchemaError` in `HttpApiError.HttpApiSchemaError`:
+When a request fails decoding or a response fails encoding, the framework wraps the underlying `Schema.SchemaError` in `HttpApiError.HttpApiSchemaError`:
 
 ```ts
 {
   _tag: "HttpApiSchemaError",
-  kind: "Params" | "Headers" | "Query" | "Body" | "Payload",
+  kind: "Params" | "Headers" | "Query" | "Payload" | "Body" | "ResponseHeaders",
   cause: Schema.SchemaError
 }
 ```
 
-By default these errors are treated as **defects** (per the v4 design) and respond with an empty `400 Bad Request` (`HttpApiError.BadRequestNoContent`). If you want to surface the validation details (or use a different status), install a schema-error transform middleware via `HttpApiMiddleware.layerSchemaErrorTransform`:
+By default these are defects interpreted at the HTTP boundary. Request kinds
+`Params` / `Headers` / `Query` / `Payload` render empty **400** responses and are
+ignored by error reporters. Response kinds `Body` / `ResponseHeaders` render
+empty **500** responses and **are reported**: a server encoding bug is not bad
+client input. Both remain available to schema-error transform middleware.
+To surface details or choose a different status, install
+`HttpApiMiddleware.layerSchemaErrorTransform`; avoid mapping response encoding
+failures to user-validation errors:
 
 ```ts
 class ValidationError extends Schema.TaggedError<ValidationError>()(
@@ -805,12 +878,14 @@ class SchemaErrorHandler extends HttpApiMiddleware.Service<SchemaErrorHandler>()
 const SchemaErrorHandlerLive = HttpApiMiddleware.layerSchemaErrorTransform(
 	SchemaErrorHandler,
 	(schemaError, { endpoint }) =>
-		Effect.fail(
-			new ValidationError({
-				kind: schemaError.kind,
-				message: `Invalid ${schemaError.kind} for ${endpoint.name}: ${String(schemaError.cause)}`
-			})
-		)
+		schemaError.kind === 'Body' || schemaError.kind === 'ResponseHeaders'
+			? Effect.die(schemaError) // preserve reported server encoding defects
+			: Effect.fail(
+				new ValidationError({
+					kind: schemaError.kind,
+					message: `Invalid ${schemaError.kind} for ${endpoint.name}: ${String(schemaError.cause)}`
+				})
+			)
 );
 
 // Attach to an endpoint, group, or the entire API
@@ -825,6 +900,12 @@ const Live = HttpApiBuilder.layer(Api).pipe(
 ```
 
 You can detect this error type explicitly with `HttpApiError.HttpApiSchemaError.is(value)` and wrap a `Schema.SchemaError`-failing effect with `HttpApiError.HttpApiSchemaError.wrap(kind, effect)`. `SchemaError` is no longer a standalone root module; use `Schema.SchemaError` and `Schema.isSchemaError`.
+
+A declared error schema takes precedence over an error's `HttpServerRespondable`
+implementation. If declared-error encoding fails, an otherwise respondable error
+can still render itself instead of being replaced unconditionally by a 500.
+
+Oversized multipart streaming uploads likewise render 413 rather than 500.
 
 ## Security and Middleware
 
@@ -1271,6 +1352,10 @@ HttpApiScalar.layerCdn(Api, {
 
 The `scalar` option is fully typed; see `HttpApiScalar.ScalarConfig` for the full ~20 fields.
 
+`authentication.preferredSecurityScheme` accepts a scheme name, an array of
+names/nested name arrays, or null. Scalar/Swagger bundled assets load when their layer is built,
+not when importing the module; this is separate from lazy OpenAPI generation.
+
 ### Swagger UI
 
 ```ts
@@ -1306,6 +1391,12 @@ const spec = OpenApi.fromApi(Api, openApiOptions);
 ```
 
 Recursive candidates always receive references even when the policy returns `undefined`. Keep the callback deterministic and treat its AST input as immutable.
+
+`includeAnnotationKey` is also forwarded to JSON Schema generation. Reusing a
+named schema with different HTTP status annotations still produces one shared
+component. Constrained route syntax such as `/:id(\\d+)` retains its matcher
+constraint on the server, but generated client URLs and OpenAPI paths omit the
+regex.
 
 ### Annotations
 
@@ -1769,7 +1860,7 @@ Layer.launch(ServerLayer).pipe(NodeRuntime.runMain);
 
 5. **Inventing `HttpApiBuilder.toWebHandler`.** There is no such thing. Convert via `HttpRouter.toWebHandler(layer)` (returns `{ handler, dispose }`) or serve via `HttpRouter.serve(layer)`.
 
-6. **Treating schema validation failures as recoverable errors by default.** They are defects (handled as empty 400) unless you install `HttpApiMiddleware.layerSchemaErrorTransform` for the endpoint/group/API.
+6. **Treating every schema failure as bad input.** Request decode defects render empty 400; response body/header encode defects are reported and render 500. Use `HttpApiMiddleware.layerSchemaErrorTransform` deliberately for the endpoint/group/API.
 
 7. **Adding middleware before the endpoints it should cover.** `.middleware(M)` only applies to endpoints/groups already added at the call site. Order is `.add(...).middleware(M)`, not `.middleware(M).add(...)`.
 

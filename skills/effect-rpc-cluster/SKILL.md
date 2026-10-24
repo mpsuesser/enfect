@@ -9,7 +9,7 @@ These modules live under `effect/*`. There are no `@effect/rpc` or `@effect/clus
 
 ## Effect Source Reference
 
-The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Inspect the `effect@4.0.0` tag for this skill; main may be newer.
+The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Inspect the `effect@4.0.6` tag for this skill; main may be newer.
 
 Key files:
 
@@ -470,7 +470,7 @@ const ServerLayer = RpcServer.layer(UsersGroup, {
 	concurrency: 'unbounded', // default; set a number to backpressure handlers
 	disableTracing: false,
 	disableFatalDefects: false, // see below
-	spanPrefix: 'RpcServer', // default; controls span naming
+	spanPrefix: 'RpcServer', // explicit prefix; absent: RPC tag alone
 	spanAttributes: { service: 'users' }
 }).pipe(
 	Layer.provide(UsersLive), // handlers
@@ -490,7 +490,7 @@ Server options:
 
 - **`concurrency: number | 'unbounded'`** (default `'unbounded'`) — one semaphore around handler execution for the whole server instance, shared by all clients. `Rpc.fork(...)` opts a single handler out of this limit.
 - **`disableFatalDefects: boolean`** (default `false`) — by default, a `die` inside a handler is treated as a *connection-level* defect and crashes the whole connection's response stream. With `true`, defects come back to the client as a normal `Cause.Die` in the request's exit. Production servers usually want `true`; the cluster fixture uses it.
-- **`disableTracing: boolean`** + **`spanPrefix`** + **`spanAttributes`** — span control. Each rpc gets a span named `${spanPrefix}.${rpc._tag}`.
+- **`disableTracing: boolean`** + **`spanPrefix`** + **`spanAttributes`** — span control. Default name is the RPC tag alone; an explicit prefix gives `${spanPrefix}.${rpc._tag}`. Client/server span kinds and `rpc.system.name: 'effect_rpc'` / `rpc.method` attributes follow OTel conventions; custom attributes override defaults.
 
 ### `RpcServer.layerHttp({ group, path, protocol })` — convenience
 
@@ -676,16 +676,25 @@ Pattern-match on `error.reason._tag` to handle transport faults (network down, m
 
 | Layer | Requires | Notes |
 |---|---|---|
-| `RpcClient.layerProtocolHttp({ url, transformClient? })` | `RpcSerialization`, `HttpClient` | request/response. `transformClient` lets you rewrite the underlying `HttpClient` (e.g., add auth headers, prepend URL paths) |
-| `RpcClient.layerProtocolSocket({ retryTransientErrors?, onTransientError? })` | `RpcSerialization`, `Socket.Socket` | full duplex. Auto-pings every 5s; reconnects on transient socket errors; reports retried open failures through `onTransientError` |
+| `RpcClient.layerProtocolHttp({ url, transformClient?, batch? })` | `RpcSerialization`, `HttpClient` | request/response; optional per-client `batch: { window, maxSize? }` shares a POST |
+| `RpcClient.layerProtocolSocket({ retryPolicy?, pingInterval?, pingTimeout?, onPingTimeout?, retryTransientErrors?, onTransientError? })` | `RpcSerialization`, `Socket.Socket` | full duplex; configurable liveness/reconnect policy; retried open failures use `onTransientError` |
 | `RpcClient.layerProtocolWorker(options)` | `Worker.WorkerPlatform`, `Worker.Spawner` | pool of worker-backed clients. Options: either `{ size, concurrency?, targetUtilization? }` or `{ minSize, maxSize, timeToLive, concurrency?, targetUtilization? }` |
 
-A missed pong is a `SocketReadError`, fails all in-flight calls, and triggers
-reconnection even with `retryTransientErrors: true`. It does not invoke
-`onTransientError`; that hook applies to retried connection-open failures.
+A socket liveness timeout is a `SocketReadError`, fails all in-flight calls, and
+triggers reconnection even with `retryTransientErrors: true`. Every decoded server
+frame counts, not just Pong. `pingInterval` defaults to 5s and `pingTimeout` to
+that interval; checks happen on ping ticks, with a ping sent before a late first
+tick declares silence. `onPingTimeout` runs before disconnect hooks/call failures;
+its defects are logged/ignored. `onTransientError` only covers retried open failures.
 Reconnection does not replay failed calls. Retry only idempotent calls explicitly.
 
 For each there's a corresponding `make*` Effect (`makeProtocolHttp`, `makeProtocolSocket`, `makeProtocolWorker`) when you need finer control over context.
+
+`makeProtocolHttp(client, { batch })` accepts the same batching option; the client
+scope owns shared batches so interrupting one caller does not abort its siblings.
+Both socket constructors accept `retryPolicy`. `Rpc.ParseOptions` annotations
+control payload/result/chunk/exit codecs on both peers, including effectful
+schema concurrency (see `effect-rpc-api`).
 
 ### `RpcClient.ConnectionHooks`
 
@@ -803,7 +812,7 @@ The choice of serialization is load-bearing because of *framing*. Some transport
 | Layer | Content-Type | Framed? | Use for | Notes |
 |---|---|---|---|---|
 | `RpcSerialization.layerJson` | `application/json` | no | `layerProtocolHttp` | Default JSON over request/response |
-| `RpcSerialization.layerNdjson` | `application/ndjson` | yes (newline) | `layerProtocolWebsocket`, sockets, http+stream | Newline-delimited JSON; one of several streaming formats |
+| `RpcSerialization.layerNdjson` | `application/x-ndjson` | yes (newline) | `layerProtocolWebsocket`, sockets, http+stream | Newline-delimited JSON; one of several streaming formats |
 | `RpcSerialization.layerJsonRpc()` | `application/json` (configurable) | no | JSON-RPC 2.0 interop | Maps `_tag` to `method`; preserves batched arrays |
 | `RpcSerialization.layerNdJsonRpc()` | `application/json-rpc` (configurable) | yes (newline) | JSON-RPC 2.0 over sockets | |
 | `RpcSerialization.layerSchemaBinary(options?)` | `application/vnd.effect.rpc+schema-binary` | yes | binary transports, framed HTTP | schema-aware binary payloads and envelopes |
@@ -825,6 +834,13 @@ Picking the wrong one is a real bug:
 - `layerJson` over raw TCP → no framing → message boundaries cannot be recovered; WebSocket frames whole messages and supports plain JSON
 - SchemaBinary against a JSON-only HTTP client → incompatible responses
 - `layerNdjson` against `layerProtocolHttp` → streams incrementally through a bounded response queue (default 16), without RPC acks
+
+NDJSON skips empty LF/CRLF lines but throws
+`RpcSerialization.NdjsonDecodeError` (with `cause`) on malformed nonempty frames.
+Older Effect HTTP peers still interoperate with the corrected media type.
+Chunk schema-decode failures end only the affected request, and interrupted
+full-buffer deliveries release the shared receive loop. Server response encoding
+failures are reported and end spans as encoding defects, not successful replies.
 
 ## Testing — `RpcTest.makeClient`
 
@@ -1066,6 +1082,7 @@ These are `Context.Reference` annotations you attach via `Rpc.annotate`, `RpcGro
 | `Persisted` | `false` | Persist messages to `MessageStorage` for durable delivery and replay |
 | `WithTransaction` | `false` | Wrap the handler in a storage transaction so SQL queries inside the handler commit atomically with the message ack |
 | `Uninterruptible` | `false` | Three values: `true` (both sides), `'client'` (client won't send `Interrupt`), `'server'` (handler runs `Effect.uninterruptible`). Predicates: `isUninterruptibleForServer`, `isUninterruptibleForClient` |
+| `InterruptOnTermination` | `false` | Immediately interrupt opted-in RPCs when their entity terminates; persisted calls resume on the next owner without saving an interrupt reply. Server-side `Uninterruptible` takes precedence |
 | `ShardGroup` | `() => 'default'` | `(entityId) => string` — control which shard group an entity goes to |
 | `ClientTracingEnabled` | `true` | Disable per-rpc client spans (e.g., for noisy cron jobs) |
 | `Dynamic` | `identity` | `(annotations, request) => annotations` — compute annotations per-request, e.g., turn on `WithTransaction` only for write methods |
@@ -1162,7 +1179,9 @@ Use cases: leader election, single-writer queues, pub/sub fan-out coordinators, 
 
 ## Cron jobs (`ClusterCron.make`)
 
-Cluster-singleton cron executions. The cron schedule is durable: missed runs (within `skipIfOlderThan`) are caught up; future runs are scheduled ahead.
+Cluster-singleton cron executions. The schedule is durable. Ordered catch-up of
+missed runs is enabled by `calculateNextRunFromPrevious: true`; default `false`
+calculates the next run from now instead.
 
 ```ts
 import { Cron, Effect } from 'effect';
@@ -1178,12 +1197,19 @@ const DailyReport = ClusterCron.make({
 });
 ```
 
-`ClusterCron.make` returns `Layer<never, never, Sharding | (R - Scope)>`. Internally it builds:
+`ClusterCron.make` returns a layer requiring `Sharding` plus `R` excluding
+`Scope` and `ClusterCron.CurrentScheduledTime`. Internally it builds:
 
 - An `Entity` named `ClusterCron/<name>` whose `run` rpc is `Persisted` + `Uninterruptible`
 - A `Singleton` that schedules the next entity invocation
 
 The schedule survives runner restarts because the next invocation is durably stored as an entity message with a `DeliverAt` annotation.
+
+Read `ClusterCron.CurrentScheduledTime` (`DateTime.Utc`) inside `execute` for the
+nominal run time; do not derive it from `Entity.CurrentAddress`. With
+`calculateNextRunFromPrevious: true`, runs share one executor entity, catch up in
+order without overlap, and a failed run blocks later runs until it succeeds or
+is stale under `skipIfOlderThan`. Initial scheduling failures are logged/retried.
 
 ## Sharding service
 
@@ -1280,6 +1306,8 @@ When the bundles aren't quite right, assemble from the primitives:
 | `SqlMessageStorage.layer` / `layerWith({ prefix? })` | production durable storage |
 | `RunnerStorage.layerMemory` | in-process |
 | `SqlRunnerStorage.layer` / `layerWith({ prefix? })` | production |
+| `SqlMessageStorage.layerMigrations({ prefix? })` / `SqlRunnerStorage.layerMigrations({ prefix? })` | DDL-only deployment layers; migration failures become defects |
+| `SqlMessageStorage.layerStorage({ prefix? })` / `SqlRunnerStorage.layerStorage({ prefix? })` | runtime services without DDL/startup schema checks; migrate first |
 | `RunnerHealth.layerNoop` | testing |
 | `RunnerHealth.layerPing` | runners ping each other via RPC |
 | `RunnerHealth.layerK8s({ namespace?, labelSelector? })` | mark runners unhealthy via the k8s API |
@@ -1299,11 +1327,46 @@ When the bundles aren't quite right, assemble from the primitives:
 - `assignedShardGroups: ['default']` — the subset of those groups this runner is allowed to own
 - `entityMaxIdleTime: 1 minute`
 - `entityMailboxCapacity: 4096`
+- `entityMailboxMetrics: false` — per-entity mailbox metrics are opt-in (also configurable with entity `mailboxMetrics`)
 - `maxResidentEntities: 10_000` — runner-wide cap across all entity types
 - `unprocessedMessageBatchSize: 1024` — maximum storage rows claimed per poll
 - `entityTerminationTimeout: 15 seconds` — k8s-friendly
 - `preemptiveShutdown: true` — drain on entity shutdown
 - `runnerShardWeight: 1` — relative shard allocation
+
+The maximum mailbox-size gauge stays enabled without per-entity mailbox metrics.
+Shard-release duration/releasing gauges and slow-release warnings expose handoff
+progress; active-entity counts are read when metrics are sampled. Sharding spans
+use low-cardinality entity types in span names; entity IDs remain attributes.
+
+### Separate storage migrations from runtime
+
+Both SQL storage modules expose `migrations({ prefix? })` loaders,
+`layerMigrations({ prefix? })`, and `layerStorage({ prefix? })` at `effect@4.0.6`
+(despite stale `@since 4.1.0` comments in the tagged source). Pass an options bag
+even for defaults. Existing `layer` / `layerWith` still run migrations first;
+use split layers to deploy DDL with an owner account and run with DML-only grants.
+Prefixes must agree, and deployment must finish before runtime starts.
+
+<!-- typecheck -->
+```ts
+import { Layer } from 'effect';
+import { SqlMessageStorage, SqlRunnerStorage } from 'effect/cluster';
+
+const MigrateStorage = Layer.mergeAll(
+	SqlMessageStorage.layerMigrations({ prefix: 'cluster' }),
+	SqlRunnerStorage.layerMigrations({ prefix: 'cluster' })
+);
+
+const RuntimeStorage = Layer.mergeAll(
+	SqlMessageStorage.layerStorage({ prefix: 'cluster' }),
+	SqlRunnerStorage.layerStorage({ prefix: 'cluster' })
+);
+```
+
+PGlite runner storage uses lock rows rather than pinning its only connection;
+custom SQL clients must accurately set `driver` (PGlite is not `pg`). SQL Server
+storage is supported, and SQLite message IDs retain exact integer precision.
 
 `availableShardGroups` is **cluster-wide** and must be identical on every runner that shares the same storage backend — shard and advisory-lock numbering is derived from it. `assignedShardGroups` is per-runner and is filtered against `availableShardGroups`, so a runner only ever owns groups that appear in *both*. If your code routes entities or workflows to a non-`default` `ClusterSchema.ShardGroup`, that group must be in `availableShardGroups` everywhere and in `assignedShardGroups` on the runners meant to host it:
 
@@ -1361,6 +1424,14 @@ is two timeout intervals from the first missing type observed.
 
 For custom SQL composition, `SqlMessageStorage.makeEncoded({ prefix? })` returns the low-level `MessageStorage.Encoded` driver directly. `SqlMessageStorage.make`, `layer`, and `layerWith` remain the decoded service constructors.
 
+Transactional terminal replies publish only after commit or clean rollback.
+Typed failures and nonfatal defects are stored **after** rollback, not as
+successful commits of the handler's writes. Fresh local persisted calls register
+their reply handler before saving; custom `registerReplyHandler` implementations
+must register immediately. Duplicates/streams still read storage. Entity
+registration immediately polls persisted messages instead of waiting a full
+poll interval.
+
 ## Bridges — exposing entities and workflows as RPC/HTTP
 
 Both `Entity` and `Workflow` ship "proxy" helpers that auto-derive `RpcGroup`s and `HttpApiGroup`s from your domain definitions, plus matching server layers that fan messages back into the cluster. This is how you put a public API in front of cluster-only protocols without writing glue.
@@ -1402,7 +1473,29 @@ The generated **RPC** payload wraps the original payload as `{ entityId: string,
 
 ### Encrypted Event-Log Compatibility
 
-`EventLogEncryption.encrypt` returns `{ iv, encryptedEntry }` for every input entry, and `EventLogMessage.WriteEntries.encryptedEntries` carries `{ entryId, iv, encryptedEntry }` values. Each entry uses a fresh AES-GCM IV. Encrypted replication peers must agree on the wire format.
+Encrypted replication now encrypts **batches**, not individual entries:
+`EncryptedEntry` / `EncryptedRemoteEntry` become `EncryptedBatch` /
+`EncryptedRemoteBatch`, and `EventLogMessage.WriteEntries.batches` replaces
+`encryptedEntries`. Each batch carries ordered plaintext `entryIds`, an `iv`,
+and `encryptedBatch`; the remote batch adds its first `sequence`. `encrypt` and
+`decrypt` now take `(identity, storeId, entriesOrBatches)`, authenticating store
+identity and entry IDs with the ciphertext. Upgrade encrypted clients/servers
+together and use **fresh encrypted server storage**; old ciphertext/storage is
+not compatible.
+
+Write RPCs return per-entry `{ entryId, sequence }` acknowledgements instead of
+assuming an echoed change stream. Custom `EventJournal` implementations must
+provide `writeRemoteAcks`, advancing only across contiguous remote sequences;
+custom encrypted server storage must provide `entrySequences`. Preserve holes and
+deduplication rather than jumping the cursor to the largest acknowledged sequence.
+
+The ACK change is breaking for **all** replication peers: mixed client/server
+versions are unsupported. Unencrypted storage `entriesAfter` returns
+`RemoteEntry` values. Encrypted storage `write` / `changes` use batches,
+`PersistedEntry` is removed, and `SqlEventLogServerEncrypted` no longer accepts
+`insertBatchSize`. `EventLogRemote.makeWith`'s `decodeChanges` receives the store ID.
+SQL and IndexedDB journals migrate on first open (SQL needs writable access);
+unconfirmed entries may upload again and must deduplicate safely.
 
 `EventJournal.withRemoteUncommited` (spelling intentional) receives a
 non-empty readonly entry array in its callback and returns `Effect<Option<A>, ...>`.
@@ -1473,6 +1566,13 @@ const OrderWorkflow = Workflow.make('OrderWorkflow', { /* ... */ })
 `ClusterWorkflowEngine` reads that annotation when computing the workflow entity's address, so the workflow's entity messages, durable clock wake-ups, and registered durable-deferred completions all route through the owning workflow's shard group. Any non-`default` group must appear in `ShardingConfig.availableShardGroups` cluster-wide and in `assignedShardGroups` on the runners meant to host it (e.g. `['default', 'workflow']`), or those messages have nowhere to land.
 
 Workflow execution entities and the durable-clock entity use a fixed `10 seconds` idle timeout. Completed and suspended workflows therefore release runner residency slots quickly; their durable state is reconstructed from storage when the next resume, deferred completion, or clock message arrives. Do not use `Entity.keepAlive` to pin these internal workflow entities.
+
+Workflow replays get fresh run scopes. Suspended scopes retain resources until
+terminal completion or owner teardown; earlier scopes finalize with `Exit.void`,
+not the final run's failure. Abandonment skips durable finalizers/compensations.
+Detached child execution requires `{ discard: true, detached: true }` and omits
+parent completion/interruption links. See `effect-workflow` for these lifecycle
+contracts and `SuspendOnFailure`'s explicit-resume behavior.
 
 Execution IDs now hash `"${name.length}:${name}:${idempotencyKey(payload)}"`.
 Recomputing IDs created under rc.116 yields new identities; retain stored IDs

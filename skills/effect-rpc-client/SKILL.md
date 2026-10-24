@@ -9,7 +9,7 @@ This skill covers the client side only: building clients, transports, serializat
 
 ## Effect Source Reference
 
-The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read the `effect@4.0.0` tag for this skill; main may be newer. These APIs remain `@stability unstable` and may break in minor releases. Keep Effect-family packages on the same release.
+The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read the `effect@4.0.6` tag for this skill; main may be newer. These APIs remain `@stability unstable` and may break in minor releases. Keep Effect-family packages on the same release.
 
 Key files:
 
@@ -77,7 +77,7 @@ Note the `RpcClientError` import: the `effect/rpc` barrel exports `RpcClientErro
 const make: <Rpcs extends Rpc.Any, const Flatten extends boolean = false>(
 	group: RpcGroup.RpcGroup<Rpcs>,
 	options?: {
-		readonly spanPrefix?: string; // default 'RpcClient'; spans named `${spanPrefix}.${tag}`
+		readonly spanPrefix?: string; // absent: tag alone; explicit prefix: `${spanPrefix}.${tag}`
 		readonly spanAttributes?: Record<string, unknown>;
 		readonly generateRequestId?: () => RequestId; // default: shared module-level numeric counter
 		readonly disableTracing?: boolean; // default false
@@ -126,7 +126,13 @@ Request ids correlate requests with responses on a shared connection. The defaul
 
 ### Tracing
 
-Unless `disableTracing: true`, every call runs in a span named `${spanPrefix}.${tag}` with `spanAttributes`, and the request envelope carries `traceId`/`spanId`/`sampled` so the server can continue the trace (whether it does depends on the server protocol — see the effect-rpc-server skill).
+Unless `disableTracing: true`, every call runs in a client-kind span named after
+the RPC tag alone, or `${spanPrefix}.${tag}` when a prefix is supplied. Defaults
+include `rpc.system.name: 'effect_rpc'` and `rpc.method`; `spanAttributes` can
+override them. The request envelope carries `traceId`/`spanId`/`sampled` so the
+server can continue the trace when the transport supports propagation.
+`Rpc.ParseOptions` annotations control payload/result/chunk/exit codecs on both
+peers, including effectful decode concurrency (see `effect-rpc-api`).
 
 ---
 
@@ -223,11 +229,13 @@ Provide exactly one of these to satisfy `RpcClient.Protocol`:
 
 | Layer | Requires | supportsAck | Notes |
 |---|---|---|---|
-| `RpcClient.layerProtocolHttp({ url, transformClient? })` | `RpcSerialization`, `HttpClient` | no | One POST per request. Framed serializations stream the response body, so streaming rpcs work over plain HTTP |
-| `RpcClient.layerProtocolSocket({ retryTransientErrors?, onTransientError? })` | `RpcSerialization`, `Socket.Socket` | yes | Full duplex; pings every 5s; auto-reconnects (section 9). Works for WebSocket and raw TCP — the `Socket.Socket` layer decides which |
+| `RpcClient.layerProtocolHttp({ url, transformClient?, batch? })` | `RpcSerialization`, `HttpClient` | no | One POST per request unless batching is enabled. Framed serializations stream responses |
+| `RpcClient.layerProtocolSocket({ retryPolicy?, pingInterval?, pingTimeout?, onPingTimeout?, retryTransientErrors?, onTransientError? })` | `RpcSerialization`, `Socket.Socket` | yes | Full duplex; configurable liveness and reconnects (section 9). Works for WebSocket and raw TCP |
 | `RpcClient.layerProtocolWorker(poolOptions)` | `Worker.WorkerPlatform`, `Worker.Spawner` | yes | Pool of workers; supports transferables and `RpcWorker.InitialMessage`; the only protocol layer with an error channel — `WorkerError` (section 10) |
 
-Each has a `makeProtocol*` Effect counterpart (`makeProtocolHttp(client)`, `makeProtocolSocket(options?)`, `makeProtocolWorker(options)`) for inline composition — `makeProtocolSocket` additionally accepts a `retryPolicy: Schedule<any, SocketError>` that the layer constructor does **not** expose.
+Each has a `makeProtocol*` Effect counterpart (`makeProtocolHttp(client, options?)`,
+`makeProtocolSocket(options?)`, `makeProtocolWorker(options)`) for inline
+composition. Both socket constructors expose the same liveness/retry options.
 
 ### HTTP
 
@@ -245,6 +253,24 @@ const ProtocolLive = RpcClient.layerProtocolHttp({
 `url` is prepended to an empty path, so it must be the complete endpoint. `transformClient` receives the client *after* the url is attached; its request transformations run before the prepend (the upstream test uses `url: ''` + `transformClient: HttpClient.mapRequest(HttpClientRequest.appendUrl('/rpc'))`).
 
 An empty HTTP response body fails the call with `RpcClientDefect` (`'Received empty HTTP response from RPC server'`) rather than hanging.
+
+Opt into per-client batching with `batch: { window: Duration.Input, maxSize? }`
+on either HTTP constructor. Requests flush at the window or size boundary and
+share one POST. The **client scope** owns a batch, not one caller: interruption
+of a member must not abort unrelated requests in that POST. This is transport
+batching, not automatic retry/idempotency of the application calls.
+
+<!-- typecheck -->
+```ts
+import { RpcClient, RpcSerialization } from 'effect/rpc';
+import { Layer } from 'effect';
+import { FetchHttpClient } from 'effect/http';
+
+const HttpProtocol = RpcClient.layerProtocolHttp({
+	url: 'https://example.com/rpc',
+	batch: { window: '5 millis', maxSize: 32 }
+}).pipe(Layer.provide([RpcSerialization.layerNdjson, FetchHttpClient.layer]));
+```
 
 ### WebSocket
 
@@ -309,7 +335,7 @@ full `RpcSerialization.CodecFor` contract.
 | Layer | Content-Type | Framed | Pair with |
 |---|---|---|---|
 | `RpcSerialization.layerJson` | `application/json` | no | HTTP (response decoded once, as an array); WebSocket (each ws message is one frame already) |
-| `RpcSerialization.layerNdjson` | `application/ndjson` | yes (newline) | anything — the safe default; enables streaming over HTTP |
+| `RpcSerialization.layerNdjson` | `application/x-ndjson` | yes (newline) | anything — the safe default; enables streaming over HTTP |
 | `RpcSerialization.layerSchemaBinary(options?)` | `application/vnd.effect.rpc+schema-binary` | yes | schema-derived binary framing and payload codecs; pair on both peers |
 | `RpcSerialization.layerJsonRpc({ contentType? })` | `application/json` | no | JSON-RPC 2.0 interop over HTTP/WebSocket; maps rpc tag ↔ `method`, supports batch arrays |
 | `RpcSerialization.layerNdJsonRpc({ contentType? })` | `application/json-rpc` | yes (newline) | JSON-RPC 2.0 over sockets |
@@ -320,10 +346,18 @@ dictionary-enabled; payload fingerprints opt into strict layout agreement.
 Workers use
 `Schema.toCodecJson` with structured clone without a serialization layer.
 
-NDJSON parsers skip malformed lines and continue with subsequent frames.
+NDJSON skips empty LF/CRLF lines, but a malformed **nonempty** line throws
+`RpcSerialization.NdjsonDecodeError` preserving the parse `cause`; it no longer
+silently loses that frame. The corrected `application/x-ndjson` header still
+interoperates with older Effect HTTP peers.
 JSON-RPC decoding skips non-object values (including batch entries), and guards
 non-string notification methods before interpreting internal protocol methods.
 This framing recovery does not replace payload/schema validation.
+
+A failed stream-chunk schema decode terminates and interrupts only the affected
+request. Interruption while its bounded buffer is full releases the delivery
+wait instead of stalling the shared receive loop. Terminal error/defect broadcasts
+snapshot pending requests so newly started calls are not swept into that failure.
 
 Choose serialization according to transport framing:
 
@@ -409,7 +443,7 @@ On the server, a client-initiated interrupt carries the `RpcSchema.ClientAbort` 
 |---|---|---|
 | `'HttpError'` | HTTP | `HttpClientErrorSchema`: has `kind: 'EncodeError' \| 'DecodeError' \| 'TransportError' \| 'InvalidUrlError' \| 'StatusCodeError' \| 'EmptyBodyError'` and optional `cause` |
 | `'SocketOpenError'` | socket | failed to (re)connect, including opening-handshake timeouts |
-| `'SocketReadError'` / `'SocketWriteError'` | socket | I/O failure on a live connection; a missed pong is a read error |
+| `'SocketReadError'` / `'SocketWriteError'` | socket | I/O failure on a live connection; a liveness timeout is a read error |
 | `'SocketCloseError'` | socket | connection closed (has `code`) |
 | `'WorkerSpawnError'` / `'WorkerSendError'` / `'WorkerReceiveError'` / `'WorkerUnknownError'` | worker | worker lifecycle failures |
 | `'RpcClientDefect'` | any | protocol bug: undecodable message, empty HTTP response, non-array unframed response; has `message` + `cause` |
@@ -443,11 +477,12 @@ Semantics to remember:
 
 The socket protocol owns a long-lived connection loop:
 
-- **Keepalive** — the client sends `Ping` every 5 seconds; a missing `Pong` by the next tick fails the connection with a `SocketReadError` and triggers reconnect. Every in-flight call fails even with `retryTransientErrors: true`; calls are not replayed automatically.
-- **Reconnect policy** — the loop retries with `Schedule.min([Schedule.exponential("500 millis", 1.5), Schedule.spaced("5 seconds")])`, capped at 5s between attempts, forever, by default. Customize the schedule via `makeProtocolSocket({ retryPolicy })` + `Layer.effect(RpcClient.Protocol)(...)`; both constructors accept `retryTransientErrors` and `onTransientError`.
+- **Keepalive** — `pingInterval` defaults to 5s and `pingTimeout` defaults to that interval. Liveness is time since **any decoded server frame**, not just Pong. Timeouts are checked on ping ticks; a late first tick sends a ping before declaring silence. Timeout fails the open connection with `SocketReadError` and reconnects; all in-flight calls fail even with `retryTransientErrors: true` and are not replayed.
+- **Timeout hook** — `onPingTimeout: Effect<void>` runs before `ConnectionHooks.onDisconnect` and before in-flight calls fail. It must be service-free/infallible; defects are logged and ignored, as with `onTransientError`.
+- **Reconnect policy** — the loop retries with `Schedule.min([Schedule.exponential("500 millis", 1.5), Schedule.spaced("5 seconds")])`, capped at 5s between attempts, forever, by default. Both `layerProtocolSocket({ retryPolicy })` and `makeProtocolSocket({ retryPolicy })` accept a custom schedule, plus `retryTransientErrors` and `onTransientError`.
 - **Failure broadcast** — on a connection error, all in-flight requests fail with `RpcClientError`, and subsequent `send`s fail fast with the same error until the socket reopens.
-- **`retryTransientErrors: true`** — connection-establishment `SocketOpenError` failures are not broadcast: pending requests stay pending across those reconnect attempts instead of failing. Established-connection read/write/close errors, including missed pongs, still fail in-flight requests.
-- **`onTransientError`** — called for every retried `SocketOpenError` while `retryTransientErrors` is enabled. Missed pongs do **not** invoke it. Its infallible, service-free effect is for logging/metrics; defects in the hook are logged and ignored.
+- **`retryTransientErrors: true`** — connection-establishment `SocketOpenError` failures are not broadcast: pending requests stay pending across those reconnect attempts instead of failing. Established-connection read/write/close errors, including liveness timeouts, still fail in-flight requests.
+- **`onTransientError`** — called for every retried `SocketOpenError` while `retryTransientErrors` is enabled. Liveness timeouts do **not** invoke it. Its infallible, service-free effect is for logging/metrics; defects in the hook are logged and ignored.
 
 ```ts
 const ProtocolLive = RpcClient.layerProtocolSocket({ retryTransientErrors: true }).pipe(
@@ -678,7 +713,7 @@ const WorkerClientLive = UsersClient.layer.pipe(
 7. **Expecting `discard: true` to be error-free.** It only removes the rpc's *declared* error; `RpcClientError` and middleware errors remain, and over HTTP the POST round-trip is still awaited.
 8. **Catching server defects with `catchTag`.** Handler `Effect.die`s arrive as `Cause.Die`, not typed failures. Use `Effect.sandbox`/`Effect.catchCause`, and remember one server fatal defect can fail *all* in-flight requests on the connection.
 9. **Assuming requests survive a reconnect.** A socket/worker failure fails every in-flight call with `RpcClientError`; after reconnect nothing is replayed. Add `Effect.retry` at call sites; `retryTransientErrors: true` only keeps requests pending across *connection-establishment* failures.
-10. **Passing `retryPolicy` to `layerProtocolSocket`.** The layer accepts `retryTransientErrors` and `onTransientError`, but not `retryPolicy`. For a custom reconnect schedule use `Layer.effect(RpcClient.Protocol)(RpcClient.makeProtocolSocket({ retryPolicy, retryTransientErrors, onTransientError }))`.
+10. **Treating only Pong as liveness.** Both socket constructors accept `pingInterval`, `pingTimeout`, `onPingTimeout`, and `retryPolicy`; every decoded server frame resets the liveness clock. Reconnection never replays failed calls.
 11. **Treating a flattened client like an object client.** With `flatten: true` you call `client('GetUser', payload)`; `client.GetUser(payload)` is not a function. Pick one shape per client.
 12. **Waiting for a queue value to signal end-of-stream.** With `asQueue: true`, completion is `Cause.Done` in the `Queue.take` error channel, and the `Dequeue` lives in a `Scope` — closing that scope interrupts the request on the server.
 13. **Expecting a graceful interrupt over HTTP.** The HTTP protocol drops `Interrupt` messages; interruption aborts the in-flight POST instead. Server handlers are still interrupted, but only when the connection abort is observed.

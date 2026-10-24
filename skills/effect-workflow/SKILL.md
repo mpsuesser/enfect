@@ -8,7 +8,7 @@ You are an Effect TypeScript expert specializing in durable workflow execution u
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Inspect the `effect@4.0.0` tag for this skill; main may be newer. Keep `effect`
+Inspect the `effect@4.0.6` tag for this skill; main may be newer. Keep `effect`
 and all companion packages on the same release.
 
 Key source files:
@@ -137,6 +137,31 @@ yield* SendEmail.interrupt(executionId);
 
 // Resume a suspended workflow
 yield* SendEmail.resume(executionId);
+```
+
+### Detached Child Executions
+
+`{ discard: true }` returns the execution ID but still links a child to its
+parent workflow. Add `detached: true` only when parent completion wakes and
+interruption linkage must be skipped. Detached execution **requires** discard;
+waiting execution with `detached: true` is invalid. Do not later await that same
+detached child from the parent: completion will not wake it. Poll externally if
+needed. Custom encoded engines must forward the detached option.
+
+<!-- typecheck -->
+```ts
+import * as Schema from 'effect/Schema';
+import { Workflow } from 'effect/workflow';
+
+const Audit = Workflow.make('Audit', {
+	payload: { eventId: Schema.String },
+	idempotencyKey: ({ eventId }) => eventId
+});
+
+const launchAudit = Audit.execute(
+	{ eventId: 'event-1' },
+	{ discard: true, detached: true }
+);
 ```
 
 ### Deterministic Execution ID
@@ -554,7 +579,11 @@ const MyWorkflow = Workflow.make('MyWorkflow', { ... }).annotate(Workflow.Captur
 
 ### SuspendOnFailure
 
-When `true`, the workflow suspends on any error instead of failing. You can then manually resume it:
+When `true`, the workflow suspends on failure instead of completing as failed.
+Failed activities are **not automatically retried** before explicit resume;
+unrelated automatic wakes do not rerun them. Interrupting a failure-suspended
+execution completes it as interrupted without retrying the failed activity.
+After fixing the issue, manually resume:
 
 ```ts
 const MyWorkflow = Workflow.make('MyWorkflow', { ... }).annotate(Workflow.SuspendOnFailure, true)
@@ -565,7 +594,10 @@ yield* MyWorkflow.resume(executionId)
 
 ## Workflow Scope
 
-Access the workflow's scope, which lives for the entire execution (across replays):
+Each replay gets a **fresh run scope**, rebuilding compensations without
+duplicating them in one shared scope. A suspended run's scope remains open under
+an execution/activation owner until terminal completion (or cluster owner
+teardown), so resources acquired before suspension may remain retained.
 
 ```ts
 // Get the scope
@@ -577,15 +609,34 @@ yield* Workflow.provideScope(myScopedEffect);
 // Add a finalizer to the workflow scope
 yield*
 	Workflow.addFinalizer((exit) =>
-		Effect.log(`Workflow completed with: ${exit}`)
+		Effect.log(`This run scope closed with: ${exit}`)
 	);
 ```
 
-Use `Workflow.addFinalizer` for terminal work that must observe an interrupt deposited through `Workflow.interrupt`. A body-level `Effect.onExit` finalizer cannot observe that deposited workflow interrupt; workflow-scope finalization is deliberately aligned between the in-memory and cluster engines.
+The final run's scope closes with its real exit. Earlier **suspended** scopes
+then close once, in reverse order, with `Exit.void` (success), not the execution's
+final failure/interrupt; this skips superseded compensations. Consequently,
+`Workflow.addFinalizer` is **not** a durable terminal-outcome notification: a
+finalizer registered in an earlier run cannot reliably infer the execution's
+outcome from its exit. A body-level `Effect.onExit` also cannot observe a workflow
+interrupt deposited after that body suspends. Cluster abandonment releases
+owner-local resources but skips durable `Workflow.addFinalizer` callbacks and
+compensations so execution can replay elsewhere.
+
+Safe `Workflow.interrupt` takes effect when the run would suspend; an unsuspended
+run may still finish normally. The engine's `interruptUnsafe` can finish running
+or suspended executions without an external wake, but can skip compensations
+and orphan children. Interrupts racing suspension persistence are retained.
 
 ## WorkflowEngine
 
 The `WorkflowEngine` is a service that orchestrates workflow execution. It handles registration, execution, replay, suspension, and resumption.
+
+Losing branches of a race unregister durable waits. `DurableDeferred.into`
+counts as in-flight work so a run does not suspend prematurely; parallel activity
+completions wake their run. Completed executions wake local waiting callers
+immediately, while callers on another cluster runner still poll using
+`suspendedRetrySchedule`.
 
 ### In-Memory Engine (Testing/Development)
 
