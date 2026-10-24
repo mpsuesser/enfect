@@ -1,14 +1,14 @@
 ---
 name: effect-socket
-description: Build pull-based TCP, Unix, TLS, and WebSocket transports with Effect Socket readers and writers. Use for bidirectional connections, framing, reconnects, socket servers, or RPC socket transports.
+description: Build pull-based TCP, Unix, TLS, WebSocket, and UDP transports with Effect Socket readers and writers. Use for bidirectional connections, datagrams, framing, reconnects, socket servers, or RPC socket transports.
 ---
 
 # Effect Socket
 
 ## Source reference
 
-Read `packages/effect/src/socket/{Socket,SocketServer}.ts` at
-`effect@4.0.0` in the Effect reference. Platform adapters live in
+Read `packages/effect/src/socket/{Socket,SocketServer,DatagramSocket}.ts` at
+`effect@4.0.6` in the Effect reference. Platform adapters live in
 `packages/platform/node-shared/src/{NodeSocket,NodeSocketServer}.ts`; Node and
 Bun expose these as `NodeSocket` / `BunSocket` and their server counterparts.
 These APIs remain `@stability unstable` and may break in minor releases despite
@@ -51,8 +51,14 @@ const echo = Effect.fn('Socket.echo')(function* (socket: Socket.Socket) {
 
 `Socket.readerBytes(socket)` and `Socket.readerString(socket, encoding?)`
 acquire a converted pull directly, rather than returning a Reader object.
-The string adapter decodes each frame independently. For TCP, use a byte stream
-and streaming `Stream.decodeText` to preserve split UTF-8 characters.
+The string adapter owns one **streaming decoder per reader acquisition**, so
+binary UTF-8 can span frames and pulls. It may emit empty strings while waiting
+for the rest of a character. A string frame flushes pending binary text (using a
+replacement character for an incomplete sequence) before its own text. A close
+with code `1000` flushes any tail once, then the next pull propagates close;
+other failures do not flush. `toChannelString` inherits this behavior. For
+per-message binary WebSocket decoding, use `readerBytes` and decode frames
+separately instead.
 
 ## WebSocket clients
 
@@ -84,6 +90,10 @@ conveniences supply the constructor. Core `Socket.layerWebSocket` requires it.
 Constructors accept compatible browser, Bun, and Node implementations without
 casts; opening-handshake headers are available where the platform supports them.
 
+Node/Bun WebSocket constructors, layers, and channel helpers accept headers
+alongside protocols. The global/browser constructor rejects an options object
+containing headers: browsers cannot set arbitrary opening-handshake headers.
+
 An effectful URL is reevaluated on each connection. `fromWebSocket(acquire, options)`
 wraps a scoped transport acquisition. Pausable transports pause at `highWaterMark`
 (default 64 KiB) and resume when drained. Browser WebSockets cannot pause; their
@@ -111,6 +121,11 @@ For STARTTLS acquire the reader, complete the protocol handshake, then call
 `reader.upgrade(options)`. TLS keys and passphrases are redacted. Server-role
 upgrades require both key and certificate; unsupported transports and invalid
 credentials fail with `SocketUpgradeError` inside `SocketError`.
+
+Client-side `reader.upgrade({ servername: 'example.com' })` supports SNI and
+certificate-hostname verification; `servername` is ignored for server-role
+upgrades. Node duplex readers retain already-consumed bytes across interrupted
+pulls and ordinary EOF; closing the acquisition scope discards retained data.
 
 ## Errors, close, and reconnect
 
@@ -192,6 +207,14 @@ rather than becoming accept-loop failures; add application-level supervision
 where they must stop the service. HTTP upgrades yield the same Socket interface;
 see `effect-http-server`.
 
+Node HTTP/1.1 clients and servers also support **raw upgrades** in 4.0.6:
+`HttpClientRequest.upgrade` requests one and `HttpClientResponse.upgrade` yields
+a Socket whose reader scope owns the connection. `HttpApiSchema.Upgrade`
+clients return `{ headers, socket }`.
+Fetch/XHR reject raw upgrades before sending; Bun/Deno servers support only
+WebSocket upgrades. Do not confuse raw upgrades with WebSocket framing or
+assume they work through an arbitrary HttpClient layer.
+
 Server addresses are `NetAddress.SocketAddress` from `effect/net`.
 Narrow to `InetAddress` before reading `port`; format its IP with `formatIp`,
 or use `formatHost` when passing a host and port separately (preserves IPv6 scopes).
@@ -233,12 +256,68 @@ interface name; Windows uses numeric zones. `toCanonical` accepts both IP and
 internet addresses: mapped IPv6 becomes IPv4 while retaining its port; other
 values retain identity and IPv6 scope metadata.
 
+## UDP datagrams (experimental)
+
+`DatagramSocket` from `effect/socket` is separate from stream `Socket`. Its
+experimental Node/Bun/Deno adapters expose `make` and `layer`; Node also exposes
+`fromSocket` for an existing scoped native socket acquisition.
+Acquire a reader even for a **send-only client**: it opens/binds the native
+socket, and writes otherwise wait. Only one reader acquisition is open at a
+time; another waits interruptibly. The reader's scope owns the handle.
+
+<!-- typecheck -->
+```ts
+import { NodeDatagramSocket } from '@effect/platform-node-shared';
+import { Effect } from 'effect';
+
+const echoOneBatch = Effect.gen(function* () {
+	const socket = yield* NodeDatagramSocket.make({ bind: { port: 0 } });
+	const reader = yield* socket.reader;
+	const writer = yield* socket.writer;
+	const packets = yield* reader.pull;
+	yield* Effect.forEach(packets, (received) =>
+		writer.write({ payload: received.payload, address: received }),
+		{ concurrency: 1 }
+	);
+}).pipe(Effect.scoped);
+```
+
+- `reader.pull` yields non-empty packet batches. Each packet's `Uint8Array`
+  payload is safe to retain; sender/local addresses are parsed lazily.
+- A platform-received datagram can be the outgoing `address`, as above, without
+  parsing its sender. Hand-built/custom datagrams must use `received.address`.
+- Receive capacity defaults to 1024 **packets**, not bytes (~64 MiB worst case).
+  `receiveBuffer: { capacity, strategy: 'dropping' | 'sliding' }` drops incoming
+  packets by default, or drops the oldest with `sliding`. `reader.dropped()`
+  counts only this buffer overflow, not network/kernel loss or scope-close loss.
+- A terminal read error is sticky: drain queued packets, then pulls fail until
+  scope close. Scope close discards queued packets and fails pending pulls.
+- `writer.writeAll` fails on the first send error without resending; partial
+  delivery is unspecified. A successful send is not delivery acknowledgement.
+  There is no built-in write timeout; bound writes explicitly when necessary.
+- Node's `peer` is a default destination, not sender filtering; `connect`
+  applies native sender filtering and cannot be combined with `peer`. An
+  explicit InetAddress destination is rejected on connected sockets.
+- Errors wrap Open/Read/Write/Closed/Unsupported reasons in
+  `DatagramSocketError`. Bun may omit the failed batch packet's address.
+  `reader.joinMulticast` is scoped; ingress selection is separate from sending
+  `multicast.interface`. Source-specific multicast is unsupported on Deno.
+
+Do not retry sends blindly: UDP does not provide exactly-once delivery. A new
+reader acquisition opens a new socket; scope retry around acquisition and use
+protocol-level identifiers/deduplication if a request might be sent again.
+
 ## Higher-level transports and tests
 
 - RPC: `RpcClient.layerProtocolSocket` and `RpcServer.layerProtocolSocketServer`;
   provide matching `RpcSerialization` layers and the socket/server layer.
   Missed pongs are read failures that fail in-flight calls even with transient
   open-error retries enabled; reconnect does not replay those calls.
+  `pingInterval` and `pingTimeout` default to 5 seconds; **any decoded frame**
+  counts as liveness, not only a pong. Optional `onPingTimeout` runs only when
+  dropping an open connection, before disconnect notification/in-flight failures;
+  callback defects are logged and ignored. Delayed ping ticks do not by
+  themselves disconnect a connection that has received recent traffic.
 - Cluster: `NodeClusterSocket` / `BunClusterSocket`; SchemaBinary is the default,
   NDJSON is explicitly selectable.
 - In-memory tests: `Socket.fromTransformStream` wraps a readable/writable pair;

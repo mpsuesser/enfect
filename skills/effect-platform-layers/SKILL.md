@@ -7,7 +7,7 @@ description: Structure Effect platform layer provision for cross-platform applic
 
 Master Effect platform layer provision for cross-platform applications. Use this skill when structuring applications that use Effect platform abstractions to ensure portability across Node.js and Bun environments.
 
-Targets **Effect 4.0.0**. Keep `effect` and `@effect/*` packages on the same version and inspect the `effect@4.0.0` source tag. APIs explicitly marked `@stability unstable` can change in minor releases, including third-party client surfaces such as NodeRedis.
+Targets **Effect 4.0.6**. Keep `effect` and `@effect/*` packages on the same version and inspect the `effect@4.0.6` source tag. APIs explicitly marked `@stability unstable` can change in minor releases, including third-party client surfaces such as NodeRedis.
 
 ## The Golden Rule
 
@@ -131,6 +131,33 @@ Runtime application/provider HTTP belongs behind Effect `HttpClient`, not raw `f
 
 `Migrator.fromFileSystem` now requires both `FileSystem.FileSystem` and `Path.Path`. `NodeServices.layer` and `BunServices.layer` already satisfy both. If a migration runtime provides only an individual file-system layer, add the matching host path layer too; on Windows, core `Path.layer` is not a substitute for a platform-aware path implementation because it uses POSIX semantics.
 
+### Service-specific DNS, UDP, and storage wiring
+
+New experimental DNS/address-resolution and UDP services are **not** included
+in aggregate platform layers. Supply their dedicated adapters. The resolver
+layer requires DNS; `provideMerge` below deliberately retains both services.
+
+<!-- typecheck -->
+```ts
+import { NodeAddressResolver, NodeDns } from '@effect/platform-node-shared';
+import { Layer } from 'effect';
+
+const networkServices = NodeAddressResolver.layer.pipe(
+	Layer.provideMerge(NodeDns.layer)
+);
+```
+
+`NodeDatagramSocket.layer(options)`, `BunDatagramSocket.layer(options)`, and
+`DenoDatagramSocket.layer(options)` provide the experimental
+`DatagramSocket.DatagramSocket` service from `effect/socket`. Socket recipes
+open on reader acquisition, not on layer construction. See `effect-socket`.
+
+`UserDirectories.layer` from `effect/persistence` is also explicit rather than
+an aggregate output. It resolves host/XDG storage locations; it does not create
+them. Config/data/state may coincide on some platforms, so put independent
+file-backed stores in separate subdirectories before using `clear`.
+`Stdio.stderrIsTerminal` is available alongside stdout detection.
+
 ### Redis Layers
 
 Redis is deliberately outside the aggregate platform layers. `NodeRedis.layer` and `NodeRedis.layerConfig` use `redis` (node-redis), with a supported peer range of `redis >=5.0.0 <7.0.0`, and accept node-redis `RedisClientOptions`. When migrating from `ioredis`:
@@ -166,7 +193,7 @@ const buildProject = Effect.gen(function* () {
 	// Use Terminal dimensions and Crypto for output metadata
 	const columns = yield* terminal.columns;
 	const rows = yield* terminal.rows;
-	const buildId = yield* crypto.randomUUIDv7;
+	const buildId = yield* crypto.randomUUIDv7();
 	yield* terminal.display(`Building project ${buildId} (${columns}x${rows})...\n`);
 
 	// Use ChildProcessSpawner for processes
@@ -325,6 +352,16 @@ it.effect('with layerNoop', () =>
 ```
 
 ## Architecture Patterns
+
+### Shared composed layers and isolation
+
+In 4.0.6, composed layers (`provide`, `provideMerge`, `mergeAll`) are memoized
+by identity, not just their leaves. Reusing one composed layer shares its
+entire build within a MemoMap, including dependencies wrapped in `Layer.fresh`
+inside that composition. Wrap the **composed layer itself** with `Layer.fresh`
+when each consumer needs a separate copy. A shared build runs on the first
+requester's fiber; interrupting it also interrupts callers awaiting that build.
+Do not use dependency-local freshness as proof of per-consumer isolation.
 
 ### Layered Application Structure
 

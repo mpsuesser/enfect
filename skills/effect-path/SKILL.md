@@ -7,7 +7,7 @@ description: Use effect Path for platform-abstract file path operations includin
 
 Use effect Path abstraction for platform-abstract file path operations. Apply this skill when working with file paths, joining segments, resolving absolute paths, or converting between file URLs and paths. `Path.layer` supplies POSIX semantics from `effect`; Node.js and Bun platform layers provide host-specific path semantics. `@effect/platform-browser` does not provide a `BrowserPath` layer, so browser code should provide `Path.layer` or a custom layer explicitly.
 
-Targets **Effect 4.0.0** (`effect@4.0.0` source tag). In browsers without `process.cwd()`, supply an absolute POSIX base to `resolve`/`toFileUrl` when using `Path.layer`; it does not invent a browser working directory.
+Targets **Effect 4.0.6** (`effect@4.0.6` source tag). In browsers without `process.cwd()`, supply an absolute POSIX base to `resolve`/`toFileUrl` when using `Path.layer`; it does not invent a browser working directory.
 
 ## Import Pattern
 
@@ -68,6 +68,28 @@ const program = Effect.gen(function* () {
 	// "C:\Users\username\project\src\index.ts" on Windows
 });
 ```
+
+### resolveWithin - Lexical containment
+
+`path.resolveWithin(root, input)` returns `Option<string>`: `Some` for a relative
+input resolving inside the root (including the root itself), `None` for rooted
+inputs or lexical escapes such as `../outside`. Semantics follow the supplied
+platform Path implementation; do not emulate containment with string prefixes.
+
+<!-- typecheck -->
+```ts
+import { Effect, Path } from 'effect';
+
+const resolveUpload = Effect.gen(function* () {
+	const path = yield* Path.Path;
+	return path.resolveWithin('/srv/uploads', 'images/avatar.png');
+}).pipe(Effect.provide(Path.layer));
+```
+
+This is **lexical**, not filesystem containment: symlinks can escape the root.
+Use an appropriate filesystem security boundary for untrusted file access.
+Custom implementations should use `Path.make(operations)`, which supplies the
+service marker and derives `resolveWithin` from the supplied path operations.
 
 ### normalize - Clean up path
 
@@ -194,6 +216,13 @@ const program = Effect.gen(function* () {
 ## URL Conversions (Effectful)
 
 Both operations can fail with `BadArgument` error.
+
+Core `Path.layer` now maps malformed file-URL percent encoding to `BadArgument`
+instead of throwing `URIError`. Native adapters wrap their runtime's URL
+conversion; acceptance can differ (Bun may accept malformed escapes). Do not
+treat adapter conversion as a strict URL-validation policy. Constructing a
+`URL` from arbitrary text is a separate throwable boundary—capture that before
+calling `fromFileUrl`.
 
 ### fromFileUrl - Convert file URL to path
 

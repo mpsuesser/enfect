@@ -5,9 +5,9 @@ description: Build reactive Atom-aware RPC clients for React/Atom UIs using Atom
 
 You are an Effect TypeScript expert specializing in `effect/reactivity/AtomRpc` — the reactive RPC client for Atom-driven frontends.
 
-Baseline: `effect@4.0.0`; inspect that tag in the Effect source reference.
+Baseline: `effect@4.0.6`; inspect that tag in the Effect source reference.
 Core reactivity APIs are `@stability unstable` and may break in minor releases.
-Use matching Effect-family versions; `@effect/atom-react@4.0.0` requires React 19.
+Use matching Effect-family versions; `@effect/atom-react@4.0.6` requires React 19.
 
 ## When to use this skill
 
@@ -132,16 +132,14 @@ AtomRpc.Service<UsersClient>()('UsersClient', {
 });
 ```
 
-`makeEffect` is mainly for testing — instead of building a real `RpcClient` from `protocol`, supply an Effect that returns the flat client directly. The test suite uses this to short-circuit network for unit tests:
+`makeEffect` is mainly for testing — instead of building a real `RpcClient` from
+`protocol`, supply an Effect returning a fully typed flat client for the group.
+Do not cast a partial function to `any`; that hides missing methods, payload
+mistakes, and wrong result/error types.
 
-```ts
-makeEffect: Effect.succeed(
-	((tag, payload) => {
-		if (tag === 'GetUser') return Effect.succeed({ id: payload.id, name: `user-${payload.id}` });
-		return Effect.die(`unexpected tag: ${tag}`);
-	}) as any
-);
-```
+Default RPC span names are the method name alone in 4.0.6. An explicit
+`spanPrefix` retains a client-specific prefix. Client/server span kinds and
+`rpc.system.name` / `rpc.method` attributes identify the transport operation.
 
 ## `query` — cached reactive reads
 
@@ -160,7 +158,7 @@ the tag when application logic needs to pair a particular payload with its resul
 
 Effect v4 query wrappers preserve serialization and retention metadata while adding reactivity. It is therefore safe to combine `reactivityKeys`, `serializationKey`, and `timeToLive`; hydration identity and idle retention are not discarded by the reactive wrapper.
 
-```ts
+```tsx
 import { useAtomValue } from '@effect/atom-react';
 
 function UserProfile({ id }: { id: string }) {
@@ -185,8 +183,7 @@ function UserProfile({ id }: { id: string }) {
 ```ts
 client.query(tag, payload, {
 	headers?: Headers.Input,                         // per-call headers
-	reactivityKeys?: ReadonlyArray<unknown>          // invalidation keys
-		| ReadonlyRecord<string, ReadonlyArray<unknown>>,
+	reactivityKeys?: Reactivity.KeysInput,          // invalidation keys
 	timeToLive?: Duration.Input,                     // cache lifetime; idle eviction
 	serializationKey?: string                        // makes the atom hydration-friendly
 });
@@ -238,7 +235,7 @@ client.mutation(tag) => Atom.AtomResultFn<
 >;
 ```
 
-```ts
+```tsx
 import { useAtomSet } from '@effect/atom-react';
 
 function CreateUserButton() {
@@ -264,7 +261,10 @@ Calling the returned function:
 - After success, fires `Reactivity.invalidate(reactivityKeys)`, causing matching `query` atoms to re-fetch
 - Returns nothing (the result is reflected via the mutation atom's own `AsyncResult` state)
 
-The mutation atom itself is also `Atom.serializable` keyed `AtomRpc:mutation:${tag}` — useful when you want to inspect the most recent mutation result in the UI (loading state, last error).
+The mutation atom is serializable under
+``AtomRpc:mutation:${JSON.stringify([id, tag])}``, where `id` is the service ID.
+Use unique IDs for distinct clients so results cannot collide during hydration.
+This differs from the old tag-only mutation key; query keys are unchanged.
 
 ### Mutation options
 
@@ -272,8 +272,7 @@ The mutation atom itself is also `Atom.serializable` keyed `AtomRpc:mutation:${t
 mutation({
 	payload: Rpc.PayloadConstructor<Rpc>, // required; constructed via the rpc payload schema
 	headers?: Headers.Input, // per-call headers
-	reactivityKeys?: ReadonlyArray<unknown> // keys to invalidate after success
-		| ReadonlyRecord<string, ReadonlyArray<unknown>>
+	reactivityKeys?: Reactivity.KeysInput // keys to invalidate after success
 });
 ```
 
@@ -297,6 +296,19 @@ reactivityKeys: {
 A `query` re-fires when *any* of its declared keys appears in an invalidation event. The matching is structural — if two atoms both list `'user-1'`, mutating with `reactivityKeys: ['user-1']` invalidates both.
 
 For more advanced invalidation patterns (e.g., conditional invalidation, debounced invalidation), use `Reactivity.invalidate(keys)` and `Reactivity.mutation(effect, keys)` directly inside Atom-runtime effects.
+
+In 4.0.6, applications can augment `Keys` in
+`effect/reactivity/Reactivity` to declare names and record-ID types, for example
+`interface Keys { readonly users: string; readonly events: never }`. Then
+`{ users: ['u1'] }` and `['events']` are accepted, but undeclared names and numeric
+user IDs are rejected. `never` marks an array-only key. With no augmentation,
+array/record inputs remain permissive. **Libraries must not augment this global
+interface**; service-instance methods remain permissive for runtime-only keys.
+
+One invalidation runs a handler once even when several keys overlap.
+`Reactivity.query` terminates on failure and drops pending reruns; later
+invalidations do not revive that failed queue. Recover within the query or
+reacquire it at an owning boundary when that behavior is intended.
 
 ## SSR hydration
 
@@ -337,6 +349,14 @@ Hydration.hydrate(registry, dehydratedFromServer);
 
 Stream rpcs are not serializable — only non-stream `query` atoms with a stable `serializationKey` can be dehydrated and hydrated.
 
+Hydration provides initial UI data, not a promise of no client request. By
+default hydrated effect/stream atoms run on mount to establish dependencies.
+`Atom.serializable(..., { key, schema, skipInitialRun: true })` can opt out on
+atoms you configure directly; AtomRpc query options do not expose that option.
+An `Initial` seed never suppresses computation. Invalid serialized schema data
+falls back to client computation, and older dehydrated AsyncResults do not
+replace newer client results. See `effect-atom-state` for seed and refresh rules.
+
 ## Custom runtime
 
 `AtomRpc.Service` accepts a `runtime` factory option. The default is `Atom.runtime`. Override it when you want all the atoms produced by this client to share a custom reactivity scope, registry, or annotation:
@@ -358,6 +378,7 @@ components that should share state.
 
 ## End-to-end example
 
+<!-- typecheck -->
 ```ts
 // --- shared/users-rpc.ts ---
 import { Schema } from 'effect';
@@ -497,10 +518,16 @@ The `query`/`mutation` arguments differ (you pass `groupName, endpointName, requ
 
 `AtomHttpApi` error types follow the `HttpApiClient` endpoint shape: endpoint decoded errors, endpoint middleware errors, and client middleware errors. With `responseMode: 'response-only'`, endpoint decoded errors are excluded because the caller receives the raw response, but endpoint middleware and client middleware errors remain typed failures. Low-level `HttpClientError` and `SchemaError` are raised as defects by the AtomHttpApi runtime.
 
+Omitting `responseMode` infers decoded-only success; an explicit literal or
+union mode retains the corresponding decoded value, raw response, or paired
+success shape. Decoded-only mutation serialization keys are now
+``AtomHttpApi:mutation:${JSON.stringify([id, group, endpoint])}``; use unique
+service IDs just as with AtomRpc. Query serialization keys have not changed.
+
 ## Anti-patterns
 
 1. **Re-creating the client on every render.** `AtomRpc.Service` produces a *singleton* class — define it once at module scope and import. Constructing it inside a component creates a new runtime per render.
-2. **Forgetting `serializationKey` for hydration.** Without it, SSR-rendered atoms re-fetch on the client. Add `serializationKey` to every query you want to hydrate.
+2. **Forgetting `serializationKey` for hydration.** Without it, SSR-rendered data is not transferred to the client. Add a stable key; hydrated queries still run on mount by default.
 3. **Using `query` for an action.** Queries are cached and may run more than once due to subscription churn. Use `mutation` for any side-effectful or state-changing call.
 4. **Forgetting `reactivityKeys` on mutations.** A mutation that doesn't list keys won't invalidate any queries — the UI will look stale until the user refreshes.
 5. **Trying to make a stream rpc serializable.** Not supported — `serializationKey` is silently ignored on streams.

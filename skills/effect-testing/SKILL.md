@@ -10,7 +10,9 @@ This skill provides comprehensive guidance for testing Effect-based applications
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Browse and read files there directly to look up APIs, types, and implementations.
+This skill targets **Effect 4.0.6**. Inspect `git show effect@4.0.6:<path>` there
+for APIs, types, and implementations; unreleased main may be ahead. Keep
+`@effect/vitest` and all Effect-family packages on that exact release.
 
 Reference this for:
 
@@ -178,6 +180,21 @@ it.effect('test with resources', () =>
 );
 ```
 
+### Effect-returning setup hooks
+
+Import `beforeAll` / `beforeEach` from `@effect/vitest`, not directly from
+Vitest, when the callback returns an Effect. In 4.0.6 the adapter runs and awaits
+that Effect with a Scope. Other required services must be explicitly provided;
+the hooks do not automatically inherit an `it.effect` test environment or suite
+service context.
+
+`beforeAll`'s Scope closes after the suite's `afterAll` hooks; `beforeEach`'s
+closes when its test finishes. Timed-out setup is interrupted as cancellation
+and cleanup proceed; do not assume interruption happens at the exact deadline.
+As with Vitest hooks generally, a cleanup exceeding the hook timeout is reported
+and Vitest stops waiting—this is not a guarantee that an uninterruptible
+finalizer can finish within any configured timeout.
+
 ## Assertions
 
 ### Use expect from vitest
@@ -330,6 +347,10 @@ Use `Layer.succeed` for complete static fakes. Reserve `Layer.mock` for tiny loc
 ### Using layer Helper
 
 Share a layer across multiple tests with the `layer` function:
+
+This shares **service state**, not just construction cost. Mutable fakes must
+reset explicitly between tests or be provided separately inside each test.
+Do not write independent initial-state assertions against one shared counter.
 
 ```typescript
 import { layer, it, expect } from '@effect/vitest';
@@ -515,6 +536,42 @@ it.effect('should track time correctly', () =>
 
 The clock separates Unix wall time (`Clock.currentTimeMillis` / `currentTimeNanos`) from monotonic elapsed time (`Clock.monotonicTimeNanos`). `TestClock.adjust` advances both, while `TestClock.setTime` may move wall time backward without decreasing monotonic time. Duration measurements such as `Effect.timed` therefore remain stable across wall-clock corrections. Nanosecond wall time also remains precise for large finite timestamps, and reads stay total after an infinite adjustment.
 
+`TestClock.layer()` installs a tracking scheduler in 4.0.6: adjustment also
+observes sleeps reached after multiple scheduler hops. A clock from
+`TestClock.make` manually provided without that layer has only the one-hop
+guarantee. Interrupted sleeps are removed from pending sleeps. Busy fibers can
+delay adjustment; `warningDelay` bounds the wait before warning rather than
+making arbitrary CPU work deterministic. Diagnostics use the live console even
+when normal test output is captured. Synchronize protocol milestones with
+Deferred/Latch rather than relying on time advancement to prove external I/O.
+
+### Deterministic cryptographic randomness
+
+`TestCrypto` from `effect/testing` supplies seeded random bytes/numbers,
+shuffles, UUIDs, and ULIDs while delegating digests to an existing platform
+Crypto. Each `make(seed)` evaluation/layer build restarts the sequence; ordering
+of random operations matters. UUIDv7/ULID also need clock control.
+
+<!-- typecheck -->
+```ts
+import { BunCrypto } from '@effect/platform-bun';
+import { Crypto, Effect, Layer } from 'effect';
+import { TestClock, TestCrypto } from 'effect/testing';
+
+const cryptoLayer = TestCrypto.layer('uuid-test').pipe(
+	Layer.provide(BunCrypto.layer)
+);
+const deterministicUuid = Effect.gen(function* () {
+	const crypto = yield* Crypto.Crypto;
+	return yield* crypto.randomUUIDv7();
+}).pipe(
+	Effect.provide(cryptoLayer),
+	Effect.provide(TestClock.layer())
+);
+```
+
+These deterministic values are test fixtures, never security-sensitive tokens.
+
 ### TestClock with Deferred
 
 ```typescript
@@ -598,7 +655,7 @@ it.effect('should handle failure', () =>
 
 ```typescript
 import { it, expect } from '@effect/vitest';
-import { Effect, Exit, Cause, Schema } from 'effect';
+import { Effect, Exit, Cause, Context, Schema } from 'effect';
 import * as Option from 'effect/Option';
 
 class NotFoundError extends Schema.TaggedError<NotFoundError>()(
@@ -647,6 +704,11 @@ important failing inputs rather than relying on replay compatibility across
 releases.
 
 ### Using it.prop for Pure Properties
+
+Callbacks must synchronously return `boolean | void`: `false` or a throw
+falsifies; `true` or `undefined` passes. Other values, including Promises and
+Effects, are rejected. Use `it.effect.prop` with an Effect callback and lift
+Promise work into that Effect rather than returning it directly from `it.prop`.
 
 ```typescript
 import * as Schema from 'effect/Schema';
@@ -798,7 +860,8 @@ const verify = Effect.gen(function* () {
 ```
 
 `verifyRoundTripEffect` generates decoded values and checks encode-then-decode
-with strict deep equality; it requires both encoding and decoding services.
+with `Schema.toEquivalence(schema)`, including custom equivalence annotations;
+it requires both encoding and decoding services. This is not strict deep equality.
 It does not promise to preserve arbitrary original wire spellings. The Promise
 counterpart is `verifyRoundTrip`, replacing `verifyLosslessTransformation`.
 Promise `succeed` / `fail` remain available for any test runner after satisfying
@@ -914,12 +977,15 @@ it.effect('logs are suppressed', () =>
 
 ```typescript
 import { it } from '@effect/vitest';
-import { Effect, Logger } from 'effect';
+import { Console, Effect, Logger } from 'effect';
 
 it.effect('logs visible', () =>
 	Effect.gen(function* () {
 		yield* Effect.log('This will appear');
-	}).pipe(Effect.provide(Logger.layer([Logger.consolePretty()])))
+	}).pipe(
+		Effect.provide(Logger.layer([Logger.consolePretty()])),
+		Effect.provideService(Console.Console, globalThis.console)
+	)
 );
 
 // Use it.live only when the live console itself is under test.
@@ -929,6 +995,12 @@ it.live('logs visible', () =>
 	})
 );
 ```
+
+Installing a pretty logger alone still writes into the captured Console service
+under `it.effect`. Override Console explicitly as above for diagnostics. To
+assert output, keep capture and read `TestConsole.logLines` / `errorLines` from
+`effect/testing`. Metrics use a shared registry by default; supply a fresh
+`Metric.MetricRegistry` per independent test when asserting exact counts.
 
 ## Testing Patterns
 
@@ -1208,30 +1280,31 @@ If interruption is part of the contract, do not stop at asserting that the fiber
 
 ## Testing with Non-Vitest Runners (bun:test)
 
-When using `bun:test` or other non-vitest runners, `@effect/vitest`'s `it.effect`, `it.live`, and `layer()` helpers are unavailable. Build a custom test harness that replicates the same semantics:
+When using `bun:test` or other non-vitest runners, `@effect/vitest`'s `it.effect`,
+`it.live`, and `layer()` helpers are unavailable. This minimal convenience
+harness scopes callbacks and supplies test services, but does **not** replicate
+Vitest cancellation, hook timeouts, fixtures, or shared-suite layer lifetimes:
 
 ```typescript
-import { Effect, Layer } from 'effect';
+import { Effect, Layer, Scope } from 'effect';
 import { TestClock, TestConsole } from 'effect/testing';
-import { describe, it } from 'bun:test';
+import { describe, it as bunIt } from 'bun:test';
 
-// Two layer stacks: one with TestClock, one without
+// Test environment captures Console and controls time; live adds neither.
 const testEnv = Layer.mergeAll(TestConsole.layer, TestClock.layer());
-const liveEnv = TestConsole.layer;
 
 export const testEffect = <R, E>(layer: Layer.Layer<R, E>) => {
 	const testLayer = Layer.provideMerge(layer, testEnv);
-	const liveLayer = Layer.provideMerge(layer, liveEnv);
 
 	return {
-		effect: (name: string, fn: () => Effect.Effect<void, unknown, R>) =>
-			it(name, () =>
-				Effect.runPromise(fn().pipe(Effect.provide(testLayer)))
+		effect: (name: string, fn: () => Effect.Effect<void, unknown, R | Scope.Scope>) =>
+			bunIt(name, () =>
+				Effect.runPromise(fn().pipe(Effect.scoped, Effect.provide(testLayer)))
 			),
 
-		live: (name: string, fn: () => Effect.Effect<void, unknown, R>) =>
-			it(name, () =>
-				Effect.runPromise(fn().pipe(Effect.provide(liveLayer)))
+		live: (name: string, fn: () => Effect.Effect<void, unknown, R | Scope.Scope>) =>
+			bunIt(name, () =>
+				Effect.runPromise(fn().pipe(Effect.scoped, Effect.provide(layer)))
 			)
 	};
 };
@@ -1256,6 +1329,9 @@ Key differences from `@effect/vitest`:
 - Use `Effect.runPromise` manually — bun:test expects `Promise<void>` from async tests
 - Layer composition uses `Layer.provideMerge` here because the harness intentionally exposes both application and test services; do not use it blindly
 - Keep `effect` as the default; use `live` only when real time or live runtime services are under test
+- A runner timeout does not automatically interrupt these `runPromise` fibers.
+  Add an explicit runner-to-Effect cancellation bridge before using this for
+  tests that can hang; the convenience wrapper alone is not a full adapter.
 
 `TestClock.layer()` works when provided directly to a program executed with `Effect.runPromise`, without an ambient Scope. The harness above merges that layer into the test stack so `TestClock.adjust` controls time.
 
@@ -1380,8 +1456,8 @@ bun run check && bun run test
 ## Example: Complete Test Suite
 
 ```typescript
-import { describe, expect, it, layer } from '@effect/vitest';
-import { Effect, Context, Layer, Exit } from 'effect';
+import { describe, expect, it } from '@effect/vitest';
+import { Effect, Context, Layer, Ref } from 'effect';
 
 // Service definition
 class Counter extends Context.Service<
@@ -1394,26 +1470,23 @@ class Counter extends Context.Service<
 	static Live = Layer.effect(
 		Counter,
 		Effect.gen(function* () {
-			let count = 0;
+			const count = yield* Ref.make(0);
 			return {
-				increment: () =>
-					Effect.sync(() => {
-						count++;
-					}),
-				value: () => Effect.succeed(count)
+				increment: () => Ref.update(count, (n) => n + 1),
+				value: () => Ref.get(count)
 			};
 		})
 	);
 }
 
-// Tests
-layer(Counter.Live)('Counter', (it) => {
+// Each test provides its own layer build and starts with an independent Ref.
+describe('Counter', () => {
 	it.effect('should start at 0', () =>
 		Effect.gen(function* () {
 			const counter = yield* Counter;
 			const value = yield* counter.value();
 			expect(value).toBe(0);
-		})
+		}).pipe(Effect.provide(Counter.Live))
 	);
 
 	it.effect('should increment', () =>
@@ -1422,7 +1495,7 @@ layer(Counter.Live)('Counter', (it) => {
 			yield* counter.increment();
 			const value = yield* counter.value();
 			expect(value).toBe(1);
-		})
+		}).pipe(Effect.provide(Counter.Live))
 	);
 
 	it.effect('should handle multiple increments', () =>
@@ -1433,7 +1506,7 @@ layer(Counter.Live)('Counter', (it) => {
 			yield* counter.increment();
 			const value = yield* counter.value();
 			expect(value).toBe(3);
-		})
+		}).pipe(Effect.provide(Counter.Live))
 	);
 });
 ```

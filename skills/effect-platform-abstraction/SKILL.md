@@ -8,7 +8,7 @@ description: Use Effect platform abstractions for cross-platform file I/O, proce
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-This guide targets **Effect 4.0.0**. Inspect the `effect@4.0.0` tag when the checkout is ahead. Keep `effect` and every `@effect/*` package on the same version. APIs explicitly tagged `@stability unstable` can change in minor releases, including third-party Redis/client options.
+This guide targets **Effect 4.0.6**. Inspect the `effect@4.0.6` tag when the checkout is ahead. Keep `effect` and every `@effect/*` package on the same version. APIs explicitly tagged `@stability unstable` can change in minor releases, including third-party Redis/client options.
 
 Reference this for:
 
@@ -210,6 +210,15 @@ const fileOperations = Effect.gen(function* () {
 
 `fs.watch(directory)` reports direct-child changes by default; pass `{ recursive: true }` for nested subdirectories. `file.seek(offset, 'start' | 'current')` accepts and returns `bigint`; negative resulting positions fail without moving the cursor. File byte counts use `ByteSize.ByteSize`. Use scoped File methods for handle operations.
 
+In 4.0.6, `fs.lstat` inspects the link itself while `stat` follows it. Full custom
+FileSystem implementations must supply `lstat`. Stat `dev` is bigint, and
+`ino`/`rdev`/`nlink`/`blocks` are `Option<bigint>`; do not coerce them to number.
+Positional `file.read(buffer, { position })` / `readAlloc(size, { position })`
+use absolute bigint offsets without moving the cursor. `fs.open(path,
+{ noFollow: true })` rejects final-component symlinks on Node/Bun POSIX, not
+parent symlinks; unsupported runtimes fail rather than weaken this policy.
+Watcher `onReady` runs after installation, which requires consuming the Stream.
+
 **Streaming Files:**
 
 <!-- typecheck -->
@@ -318,6 +327,12 @@ const pathOps = Effect.gen(function* () {
 
 In Effect v4, `Migrator.fromFileSystem` requires both `FileSystem.FileSystem` and `Path.Path` because migration module paths are converted to file URLs before dynamic import. Aggregate Node/Bun service layers satisfy both requirements. When providing services individually on Windows, use the host-aware path layer rather than core `Path.layer`, which has POSIX semantics.
 
+`path.resolveWithin(root, input): Option<string>` rejects rooted inputs and
+lexical escapes, but does not protect against filesystem symlinks. Use
+`Path.make` for custom implementations so containment uses their semantics.
+Core `Path.layer` maps malformed file-URL escapes to `BadArgument`, not
+`URIError`; native adapter acceptance follows its runtime and can differ.
+
 ### ChildProcess - Process Execution
 
 `ChildProcess` builds command values; the `ChildProcessSpawner` service executes them with scoped resource ownership. Output helpers do not reject nonzero exit codes: use a handle and check `exitCode` when status determines success. Drain combined output with `handle.all`, or consume stdout/stderr concurrently, before leaving the scope.
@@ -412,6 +427,13 @@ const commandExamples = Effect.gen(function* () {
 
 The `Terminal` service provides interactive terminal capabilities.
 
+Node/Bun terminal key input ends on Esc, Ctrl+C, or Ctrl+D by default, with
+prompts reporting `Terminal.QuitError`. Pass a `shouldQuit` predicate to the
+platform terminal `make` when different quit keys are part of the UI contract.
+Prompt input is acquired lazily, so a constant fallback does not consume piped
+stdin. Node's `readLine` supports TTY echo and Ctrl+C; do not replace it with a
+global prompt to work around older adapter behavior.
+
 **Anti-Pattern - Direct Console:**
 
 ```typescript
@@ -497,8 +519,8 @@ const cryptoProgram = Effect.gen(function* () {
 	const crypto = yield* Crypto.Crypto;
 
 	const bytes = yield* crypto.randomBytes(32);
-	const uuidV4 = yield* crypto.randomUUIDv4;
-	const uuidV7 = yield* crypto.randomUUIDv7;
+	const uuidV4 = yield* crypto.randomUUIDv4();
+	const uuidV7 = yield* crypto.randomUUIDv7();
 	const digest = yield* crypto.digest('SHA-256', bytes);
 
 	return { bytes, uuidV4, uuidV7, digest };
@@ -506,6 +528,13 @@ const cryptoProgram = Effect.gen(function* () {
 ```
 
 `NodeServices.layer` and `BunServices.layer` include `Crypto.Crypto`. Browser applications can provide `BrowserCrypto.layer` from `@effect/platform-browser`.
+
+UUID generators are functions in 4.0.6: `randomUUIDv4()` / `randomUUIDv7()`
+(or `{ format: 'hex' }`) return lowercase hyphenated text;
+`randomUUIDv4({ format: 'bytes' })` / `randomUUIDv7({ format: 'bytes' })` return
+16 bytes. For deterministic tests, `TestCrypto.layer(seed)` from `effect/testing`
+requires a platform Crypto underneath and preserves its digest implementation.
+UUIDv7/ULID tests must also control the clock.
 
 ### HttpClient - HTTP Requests
 
@@ -729,6 +758,49 @@ const typedStore = Effect.gen(function* () {
 	// user: Option.Option<{ id: number, name: string, email: string }>
 });
 ```
+
+### UserDirectories - Application storage locations
+
+`effect/persistence/UserDirectories` resolves home/config/data/cache/state
+locations using host conventions and absolute XDG overrides. Provide
+`UserDirectories.layer` explicitly; it reads the current ConfigProvider on each
+call and returns `PlatformError` on resolution failure. It resolves locations,
+not directory creation.
+
+<!-- typecheck -->
+```ts
+import { Effect, Path } from 'effect';
+import { UserDirectories } from 'effect/persistence';
+
+const configDirectory = Effect.gen(function* () {
+	const dirs = yield* UserDirectories.UserDirectories;
+	const path = yield* Path.Path;
+	return path.join(yield* dirs.config('myapp'), 'config');
+}).pipe(Effect.provide(UserDirectories.layer));
+```
+
+Config/data coincide on macOS and Windows; state also coincides on macOS.
+Use separate subdirectories when storing multiple kinds, especially before
+using `KeyValueStore.layerFileSystem`, whose `clear` removes files recursively.
+
+### DNS, address resolution, and UDP
+
+Experimental `effect/net/{Host,Dns,AddressResolver}` separate host parsing,
+DNS lookup, and resolution into numeric socket addresses. Provide the runtime's
+DNS/resolver layers explicitly (for example `NodeDns` and `NodeAddressResolver`);
+they are not outputs of aggregate `NodeServices` / `BunServices`.
+
+DNS methods normalize domain-name strings; endpoint resolution also accepts
+`host:port`, and `Dns.reverse` accepts address inputs. TLSA queries require
+Node's native `resolveTlsa` (Node 22.15 / 23.9 or later); Bun, Deno, and older
+Node versions fail with `Unsupported`. `Schema.DnsTlsaRecord` uses hex for the
+certificate association data in its JSON codec.
+
+Experimental `effect/socket/DatagramSocket` supplies scoped pull-based UDP.
+Node, Bun, and Deno expose `*DatagramSocket` adapters; these also require explicit
+wiring. Even send-only clients must acquire a reader to open the native socket.
+See `effect-socket` for receive bounds, addressing, and delivery limitations.
+For terminal detection, `Stdio.stderrIsTerminal` complements `stdoutIsTerminal`.
 
 ### Redis - Commands and Scoped Subscriptions
 

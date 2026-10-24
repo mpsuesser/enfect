@@ -7,14 +7,14 @@ description: Build composable React components using Effect Atom for state manag
 
 Build React UIs using compositional patterns, Effect Atom for state management, and the component module pattern. Use this skill when creating React applications that integrate with Effect's ecosystem.
 
-`@effect/atom-react@4.0.0` requires React `>=19.0.0 <20.0.0` and the same version
+`@effect/atom-react@4.0.6` requires React `>=19.0.0 <20.0.0` and the same version
 of `effect`. Core `effect/reactivity` APIs remain `@stability unstable` and can
 change incompatibly in minor releases.
 
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Use `git show effect@4.0.0:<path>` there for this baseline; main may be ahead.
+Use `git show effect@4.0.6:<path>` there for this baseline; main may be ahead.
 
 Reference this for:
 
@@ -304,11 +304,47 @@ Use `Atom.keepAlive` intentionally for state that should outlive subscriptions,
 and keep external-resource cleanup in atom finalizers. See `effect-atom-state`
 for SWR, concurrent function atoms, and batching semantics.
 
+`RegistryProvider.initialValues` accepts tuples from
+`Atom.initialValue(atom, value, { skipInitialRun: true })` in 4.0.6. Hydrated
+effect/stream atoms otherwise run on mount to establish dependencies. Skipping
+does not skip factory reads or wrapper/reactivity setup; effect-internal
+dependencies are tracked only on the first real run. An `Initial` seed never
+suppresses that run, and refresh/dependency changes still recompute.
+`useAtomInitialValues` still accepts **two-element tuples**; do not pass the
+provider's new third-element options to that hook.
+
+```tsx
+import { RegistryProvider } from '@effect/atom-react';
+import { Effect } from 'effect';
+import { AsyncResult, Atom } from 'effect/reactivity';
+
+const count = Atom.make(Effect.succeed(1));
+const seeds = [Atom.initialValue(count, AsyncResult.success(1), { skipInitialRun: true })];
+
+export const Provider = ({ children }: { children: React.ReactNode }) => (
+	<RegistryProvider initialValues={seeds}>{children}</RegistryProvider>
+);
+```
+
+`useAtomSet` / `useAtom` promise modes observe the atom's next settled state,
+**not a per-write result**. Serialize overlapping calls if each caller needs its
+own result; `{ concurrent: true }` does not change that correlation contract.
+
+`useAtomValue(atom, selector)` subscribes to the source and caches selection for
+an unchanged source value. A shared server snapshot remains stable while any
+reader is subscribed, so late Suspense boundaries hydrate from the earlier
+snapshot before updating to live data. This does not prevent mismatches caused
+by updates before the first/after the last subscriber, or a derived atom first
+read inside a late boundary. Keep seeds and atom identities stable.
+
 ### Pattern: Basic Atom State
 
+<!-- typecheck -->
 ```typescript
 // state/Cart.ts
 import * as Atom from 'effect/reactivity/Atom';
+import * as Arr from 'effect/Array';
+import * as Schema from 'effect/Schema';
 import { Effect } from 'effect';
 
 /**
@@ -350,14 +386,16 @@ export const isEmpty = Atom.map(cart, (c) => c.items.length === 0);
 /**
  * Stable summary: suppress notifications when a rebuilt summary is equal.
  */
+class CartSummary extends Schema.Class<CartSummary>('CartSummary')({
+	itemCount: Schema.Number,
+	total: Schema.Number
+}) {}
+
 export const summary = Atom.make((get) => {
 	const value = get(cart);
-	return { itemCount: value.items.length, total: value.total };
+	return new CartSummary({ itemCount: value.items.length, total: value.total });
 }).pipe(
-	Atom.withEquality(
-		(current, next) =>
-			current.itemCount === next.itemCount && current.total === next.total
-	)
+	Atom.withEquality(Schema.toEquivalence(CartSummary))
 );
 
 /**
@@ -367,15 +405,15 @@ export const addItem = Atom.fn(
 	Effect.fnUntraced(function* (item: CartItem) {
 		const current = yield* Atom.get(cart);
 
-		const existingIndex = current.items.findIndex((i) => i.id === item.id);
+		const existing = Arr.some(current.items, (i) => i.id === item.id);
 
-		if (existingIndex >= 0) {
+		if (existing) {
 			// Update quantity
-			const updatedItems = [...current.items];
-			updatedItems[existingIndex] = {
-				...updatedItems[existingIndex],
-				quantity: updatedItems[existingIndex].quantity + item.quantity
-			};
+			const updatedItems = Arr.map(current.items, (entry) =>
+				entry.id === item.id
+					? { ...entry, quantity: entry.quantity + item.quantity }
+					: entry
+			);
 
 			yield* Atom.set(cart, {
 				items: updatedItems,
@@ -712,21 +750,24 @@ export namespace DataTable {
 		</thead>
 	);
 
-	export const Body: React.FC<{
-		children: (props: RenderProps<T>) => React.ReactNode;
-	}> = ({ children, data, isLoading }) => (
+	export const Body = <T,>({ children, data, isLoading }: {
+		readonly data: ReadonlyArray<T>;
+		readonly isLoading: boolean;
+		readonly children: (props: RenderProps<T>) => React.ReactNode;
+	}) => (
 		<tbody>{children({ data, isLoading })}</tbody>
 	);
 }
 
 // Usage
 function UserTable() {
+	// User.list is a synchronous list atom in this illustrative composition.
 	const users = useAtomValue(User.list);
 
 	return (
 		<DataTable.Frame>
 			<DataTable.Header columns={['Name', 'Email']} />
-			<DataTable.Body>
+			<DataTable.Body data={users} isLoading={false}>
 				{({ data, isLoading }) =>
 					isLoading ? (
 						<LoadingRow />

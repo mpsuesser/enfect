@@ -3,6 +3,14 @@
 > **Source**: https://loggingsucks.com/
 > **Author**: Boris Tane
 
+> **Effect application note (4.0.6)**: This conceptual summary is not an API
+> reference. Map useful fields to `Effect.annotateCurrentSpan` / `annotateLogs`;
+> extra log-message arguments are not automatically indexed annotations. Minimize
+> and redact personal/sensitive data, and keep high-cardinality identifiers out
+> of metric labels. More fields are useful only when their diagnostic value
+> justifies privacy, retention, indexing, and storage costs. See the companion
+> skill and `effect-observability` for current exporter names and conventions.
+
 ## Core Problem
 
 Traditional logging is fundamentally broken for modern distributed systems. A single user request might touch 15 services, 3 databases, 2 caches, and a message queue, yet logs remain structured around monolithic, single-server assumptions.

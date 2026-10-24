@@ -8,7 +8,7 @@ You are an Effect TypeScript expert specializing in observability — structured
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Inspect `git show effect@4.0.0:<path>` there for this baseline; main may be ahead.
+Inspect `git show effect@4.0.6:<path>` there for this baseline; main may be ahead.
 Keep `effect` and `@effect/*` packages on the same version. The OTLP modules and
 `@effect/opentelemetry` APIs are tagged `@stability unstable` and may break in
 minor releases; the shorter `effect/observability` import path is not a stability guarantee.
@@ -179,6 +179,10 @@ const batchedLogger = Logger.batched(Logger.formatStructured, {
 const BatchedLoggerLayer = Logger.layer([batchedLogger]);
 ```
 
+`Logger.batched` serializes flushes. Shutdown waits for an in-flight flush before
+flushing remaining entries; do not start a competing manual drain or assume
+the window timer is the only flush trigger.
+
 ### File Logging
 
 Write logs directly to a file (requires the `FileSystem` service from `effect`):
@@ -286,6 +290,41 @@ const MyLayer = Layer.effectDiscard(setupEffect).pipe(
 );
 ```
 
+### HTTP and RPC trace conventions in 4.0.6
+
+HTTP client/server spans default to the method alone (`GET`, not `http.client
+GET` / `http.server GET`). RPC spans likewise default to the method; explicit
+RPC `spanPrefix` retains a prefix. Client/server kinds and `rpc.system.name` /
+`rpc.method` provide context. Update backend queries rather than depending on
+old default names.
+
+HTTP header capture is now opt-in using `HttpClient.TracerHeaderFilter` or
+`HttpMiddleware.TracerHeaderFilter`. Captured sensitive headers are still
+redacted via `Headers.CurrentRedactedNames`. URL userinfo and query secrets use
+separate `UrlParams.CurrentRedactedNames`; supplying a custom list **replaces**
+defaults, so retain defaults you still need. Redaction affects telemetry, not
+the actual request. Prefer narrow allowlists to blanket header capture.
+
+Client spans mark 4xx/5xx responses as errors even though receiving a response
+still succeeds as an Effect; server spans treat 5xx as errors, not ordinary 4xx.
+Server spans finish before the request fiber exits so shutdown can flush them.
+Client trace propagation writes `b3` and `traceparent` by default; disabling
+`HttpClient.TracerPropagationEnabled` suppresses those headers, not span
+creation, when a browser target's CORS policy cannot accept them.
+
+Successful WebSocket upgrades report status `101` to server middleware, not the
+discarded handler response's status. Incoming W3C contexts reject all-zero trace
+or parent IDs; B3 contexts validate identifier widths/hex and honor debug sampling.
+Do not rely on malformed propagation values being accepted as a parent.
+
+SQL statement spans now use the database namespace, server address/port, or
+database system as the name (fallback `sql.execute`). Effect execution methods
+use `effect.sql.method`, not `db.operation.name`; transaction spans are internal
+with `effect.sql.transaction.*` events. GenAI spans use `gen_ai.provider.name`
+instead of `gen_ai.system`, are client spans, and record `gen_ai.output.type`.
+Effect-specific AI fields use `effect.ai.*`; OpenAI-specific fields use
+`openai.*`. See `effect-sql` and the AI skills before customizing those attributes.
+
 ---
 
 ## 4. Metrics
@@ -389,10 +428,45 @@ const value = yield* Metric.value(requestCount);
 
 // Snapshot all metrics
 const snapshots = yield* Metric.snapshot;
-for (const metric of snapshots) {
-	console.log(`${metric.id}: ${JSON.stringify(metric.state)}`);
-}
+// Inspect or export snapshots; do not stringify arbitrary states into log fields.
 ```
+
+### Series ownership and snapshot-backed gauges
+
+4.0.6 adds unstable `Metric.remove`, `removeUnsafe`, and `registerUnsafe` APIs.
+Removal targets the metric plus attributes merged with
+`Metric.CurrentMetricAttributes`, leaving other series intact. A later update
+recreates the removed series from its initial state. Exporters discard removed
+series' delta bookkeeping when they disappear from snapshots.
+
+For values already held by a runtime integration, `registerUnsafe` reads
+`hooks.get` at snapshot time. Updates/modifications of that series are ignored,
+including supplied mutation hooks. The registration retains its getter closure
+until removed, so scope it to the source's lifetime. An older registration's
+`remove()` cannot remove a replacement registration.
+
+<!-- typecheck -->
+```ts
+import { Effect, Metric } from 'effect';
+
+const observeQueue = Effect.fn('Queue.observe')(function* (size: () => number) {
+	const context = yield* Effect.context<never>();
+	const gauge = Metric.gauge('queue_size');
+	return yield* Effect.acquireRelease(
+		Effect.sync(() => Metric.registerUnsafe(gauge, context, {
+			get: () => ({ value: size() }),
+			update: () => {},
+			modify: () => {}
+		})),
+		(registration) => Effect.sync(() => registration.remove())
+	);
+});
+// Keep the returned registration inside its owning Scope.
+```
+
+Bound metric attribute cardinality. User IDs, request IDs, raw URLs, and arbitrary
+error messages belong in redacted logs/spans when needed, not metric labels.
+Removal is lifecycle management, not permission to create unbounded series.
 
 ---
 
@@ -411,6 +485,7 @@ import { Otlp } from 'effect/observability';
 
 const ObservabilityLayer = Otlp.layerJson({
 	baseUrl: 'http://localhost:4318',
+	compression: 'gzip', // optional; defaults to 'none'
 	resource: {
 		serviceName: 'my-api',
 		serviceVersion: '1.0.0',
@@ -435,6 +510,41 @@ headers, exporter selection, and `OTEL_SDK_DISABLED`). Provide both
 `OtlpSerialization.layerJson` (or protobuf) and an `HttpClient` layer. Explicit
 `layerJson({ baseUrl })` is the programmatic endpoint path; it is not the
 environment-selected exporter setup.
+
+All combined/individual exporters accept `compression: 'gzip' | 'none'`
+(default `none`). Gzip requires runtime `CompressionStream` support and only
+compresses bodies at least 1 KB by default; compression happens once before
+transient retries. Compression failures temporarily disable the exporter like
+transport failures; flush/shutdown do not surface them as typed failures.
+With config layers, `OTEL_EXPORTER_OTLP_{LOGS,TRACES,METRICS}_COMPRESSION`
+overrides `OTEL_EXPORTER_OTLP_COMPRESSION`. On 429 responses, valid whole
+nonnegative seconds or an HTTP date in `Retry-After` control the delay; missing
+or invalid values fall back to 5 seconds.
+
+### Exported fields and metric shapes
+
+Update dashboards/queries when moving from 4.0.0 to 4.0.6:
+
+- OTLP logs use `effect.fiberId`, numeric elapsed-millisecond
+  `effect.log_span.<label>`, and `exception.type`, `exception.message`,
+  `exception.stacktrace` instead of `fiberId`, `logSpan.*`, and `log.error`.
+  Event and observation timestamps are separate.
+- Resources include `telemetry.sdk.*`; log/trace instrumentation scope is
+  `effect` with its release version, not the service name. Trace IDs (including
+  links and log correlation) are padded to 128-bit width.
+- Interrupt-only spans have Unset status plus `effect.fiber.interrupted: true`,
+  not Ok/"Interrupted". Success is Ok; reportable failures use Error and
+  exception events.
+- OTLP summaries are one native Summary under the metric ID, **always
+  cumulative**, replacing the old separate `_quantiles` / `_count` / `_sum`
+  export. Quantiles remain windowed; count/sum are lifetime totals.
+- Common units normalize to UCUM (`milliseconds` → `ms`, `bytes` → `By`).
+  Bigint counters/gauges beyond safe-number range retain decimal precision.
+- Histograms include all finite boundaries plus overflow. Later delta intervals
+  omit min/max because cumulative extrema cannot represent interval extrema.
+  Prometheus emits exactly one `+Inf` bucket.
+- OTLP JSON encodes NaN/Infinity correctly. Integer attributes outside signed
+  int64 use double values for numbers and strings for bigint values.
 
 ### Individual OTLP Exporters
 
@@ -548,6 +658,7 @@ Common options for the individual OTLP exporters (`OtlpLogger.layer`, `OtlpTrace
 | `resource.serviceVersion` | —                | Service version                          |
 | `resource.attributes`     | —                | Additional resource attributes           |
 | `headers`                 | —                | HTTP headers for auth etc.               |
+| `compression`             | `none`           | `gzip` or `none`; requires runtime support |
 | `exportInterval`          | signal-specific  | How often to flush batches (see below)   |
 | `maxBatchSize`            | signal-specific  | Max items per export batch (see below)   |
 | `shutdownTimeout`         | `3 seconds`      | Timeout for final flush on shutdown      |
@@ -564,7 +675,7 @@ The all-in-one `Otlp.layerJson` / `Otlp.layerProtobuf` use **signal-specific** i
 
 `OtlpMetrics.layer` additionally accepts:
 
-- `temporality`: `"cumulative"` (default) or `"delta"` — determines how metric values relate to their time interval
+- `temporality`: `"cumulative"` (default) or `"delta"` — determines how metric values relate to their time interval; summaries are always cumulative
 
 `OtlpLogger.layer` additionally accepts:
 
@@ -637,19 +748,27 @@ const CustomPrometheusLayer = PrometheusMetrics.layerHttp({
 
 ### Testing Logged Output
 
-Use `TestConsole` from `@effect/vitest` to capture and assert on console output:
+Import `TestConsole` from `effect/testing`; `it.effect` supplies its capture
+layer. Effect logs need a console logger installed before asserting its output:
 
+<!-- typecheck -->
 ```ts
-import { Effect } from 'effect';
-import { it } from '@effect/vitest';
+import { Effect, Logger } from 'effect';
+import { TestConsole } from 'effect/testing';
 
-it.effect('logs checkout flow', () =>
-	Effect.gen(function* () {
-		yield* myLoggingEffect;
-		// TestConsole captures log output for assertion
-	})
+const captured = Effect.gen(function* () {
+	yield* Effect.logInfo('checkout completed');
+	return yield* TestConsole.logLines;
+}).pipe(
+	Effect.provide(Logger.layer([Logger.consoleLogFmt])),
+	Effect.provide(TestConsole.layer)
 );
 ```
+
+A pretty logger still uses the captured Console service. For visible diagnostic
+output explicitly provide `Console.Console` with `globalThis.console`, or use
+`it.live` when live console/time is the behavior under test. This is separate
+from asserting captured output.
 
 ### Testing Metrics
 
@@ -662,9 +781,12 @@ it.effect('increments request counter', () =>
 		yield* Metric.update(counter, 5);
 		const state = yield* Metric.value(counter);
 		expect(state.count).toBe(5);
-	})
+	}).pipe(Effect.provideService(Metric.MetricRegistry, new Map()))
 );
 ```
+
+Metric registries are shared by default. Give tests a fresh registry (or remove
+their series) so results do not depend on execution order or previous runs.
 
 ### Testing Spans
 
@@ -759,7 +881,7 @@ class Checkout extends Context.Service<
 6. **`References.MinimumLogLevel`** controls filtering — not a logger concern, set it via `Layer.succeed`.
 7. **Metric names should follow conventions** — snake_case with units suffix (e.g., `http_request_duration_ms`).
 8. **`Metric.withAttributes` creates a tagged variant** — it does not mutate the original metric.
-9. **`OtlpMetrics` temporality** — use `"delta"` for backends like Datadog/Dynatrace, `"cumulative"` (default) for Prometheus-style backends.
+9. **`OtlpMetrics` temporality** — use `"delta"` for backends like Datadog/Dynatrace, `"cumulative"` (default) for Prometheus-style backends; summaries remain cumulative in either mode.
 10. **OTLP modules are under `effect/observability`** — they remain tagged
     `@stability unstable`; inspect the matching release when upgrading.
 11. **Use `OtlpExporter.Flusher` for manual drains** — bound `flusher.flush` with `Effect.timeoutOption` when shutdown latency must be capped.

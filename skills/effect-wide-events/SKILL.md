@@ -13,6 +13,7 @@ optimize(querying) ∧ ¬optimize(writing)
 </philosophy>
 
 <current-practice>
+baseline      := effect@4.0.6 (exact release tag)
 implementation := OTel spans + annotations
 wide-events    := mental-model for annotation strategy
 
@@ -39,8 +40,11 @@ wide-event.fields := {
   outcome:     {success, errorCode, httpStatus}
 }
 
-high-dimensionality → better-queryability
-high-cardinality(userId) → acceptable
+useful-dimensionality → better-queryability
+high-cardinality(userId) → logs/spans only when justified by privacy + cost
+metric-labels := bounded-cardinality ∧ ¬{userId, requestId, rawUrl}
+fields := allowlist ∧ data-minimization ∧ redaction ∧ retention-policy
+// Never capture credentials, tokens, sensitive payloads, or unnecessary personal data.
 </dimensionality>
 
 <anti-patterns>
@@ -57,7 +61,8 @@ span.setAttributes({
   "request.success"
 })
 
-∀ span → attach(identity ∪ user ∪ business ∪ performance ∪ outcome)
+∀ operation-span → attach(relevant(identity ∪ business ∪ performance ∪ outcome))
+user-context → only when necessary ∧ permitted ∧ minimized
 </correct-pattern>
 
 <tail-sampling>
@@ -78,7 +83,7 @@ before(instrument) → verify(answerable({
 
 <terminology>
 cardinality    := |unique values| (userId=high, httpMethod=low)
-dimensionality := |fields per event| (more → better)
+dimensionality := |fields per event| (useful + safe → better, not unlimited)
 wide-event     := canonical-log-line := one comprehensive record
 </terminology>
 
@@ -93,3 +98,9 @@ choosing(fields-to-index)
 </wide-events>
 
 Reference: See `Article.md` for full article by Boris Tane (loggingsucks.com)
+
+Effect 4.0.6 mapping: HTTP/RPC span names default to the method, so query span
+kind/semantic attributes rather than old `http.client` / `http.server` prefixes.
+OTLP log fields use `effect.fiberId`, numeric `effect.log_span.*`, and
+`exception.*`. HTTP header capture is opt-in; header redaction and query-parameter
+redaction are separate policies. See `effect-observability` for exporter contracts.

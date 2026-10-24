@@ -7,7 +7,7 @@ description: Use Effect FileSystem for platform-abstract file I/O with Node.js/B
 
 Use `effect` FileSystem for platform-abstract file I/O. Stock layers are provided for Node.js and Bun; `@effect/platform-browser` does not provide a FileSystem layer, so browser code needs a custom/injected implementation.
 
-Targets **Effect 4.0.0**. Match platform package versions to `effect`; verify APIs against the `effect@4.0.0` source tag rather than unreleased `main`.
+Targets **Effect 4.0.6**. Match platform package versions to `effect`; verify APIs against the `effect@4.0.6` source tag rather than unreleased `main`.
 
 ## Basic Pattern
 
@@ -223,9 +223,34 @@ const useFileHandle = Effect.gen(function* () {
 and returns `Effect<bigint, PlatformError>`. A negative resulting position fails
 without changing the cursor. Byte counts and `File.Info.size` use
 `ByteSize.ByteSize`; size inputs use `ByteSize.Input`. Keep large offsets/counts
-exact, and handle `Option.none()` for optional stat metadata outside the safe
-integer range. Use scoped handle operations (`read`, `readAlloc`, `write`,
+exact. Device/inode metadata uses bigint, not optional numbers restricted to the
+safe-integer range. Use scoped handle operations (`read`, `readAlloc`, `write`,
 `writeAll`, `seek`, `stat`, `sync`, `truncate`) rather than raw descriptors.
+
+### Positional reads and symlink policy
+
+`file.read(buffer, { position: 0n })` and `file.readAlloc(size, { position })`
+read at an absolute bigint position without moving the cursor. Independent
+positional reads may run concurrently; do not concurrently mix cursor-based
+reads, writes, or seeks on one handle. Negative positions fail with `BadArgument`.
+`read` returns `0` at EOF; `readAlloc` returns `Option.none()`.
+
+<!-- typecheck -->
+```ts
+import { Effect, FileSystem } from 'effect';
+
+const readHeader = Effect.gen(function* () {
+	const fs = yield* FileSystem.FileSystem;
+	const file = yield* fs.open('data.bin', { flag: 'r', noFollow: true });
+	return yield* file.readAlloc(16, { position: 0n });
+}).pipe(Effect.scoped);
+```
+
+`noFollow: true` rejects a symlink in the **final path component** on Node/Bun
+POSIX. It does not constrain symlinks in parent directories and is not a sandbox.
+Unsupported runtimes (Windows and Deno) fail with `BadArgument` rather than
+silently following the link. Do not replace this with a separate `lstat` check
+followed by `open`: the path can change between those operations.
 
 ### Byte sizes and exact offsets
 
@@ -326,6 +351,16 @@ const getFileInfo = Effect.gen(function* () {
 	yield* Console.log(`Created: ${info.birthtime}`); // Option<Date>
 });
 ```
+
+`stat` follows symbolic links; `lstat(path)` reports the link itself. Custom full
+implementations passed to `FileSystem.make` must implement `lstat`; `makeNoop`
+defaults it to `NotFound` unless overridden.
+
+`File.Info.dev` is `bigint`; `ino`, `rdev`, `nlink`, and `blocks` are
+`Option<bigint>`. `mode`, `uid`, and `gid` remain numbers. Node/Bun preserve
+unsigned 64-bit device/inode/link identifiers. Deno's native number metadata
+can already have lost precision before adaptation; bigint conversion cannot
+restore it. Size remains `ByteSize.ByteSize`.
 
 ### Access (Check Permissions)
 
@@ -472,6 +507,13 @@ const consumeWatchEvents = Effect.gen(function* () {
 
 Directory watching is non-recursive by default. Pass `{ recursive: true }` to include changes in nested subdirectories. Watching a file watches that file; the recursive option matters for directory trees.
 
+Use `fs.watch(path, { onReady: () => ... })` to signal that installation has
+completed before starting a producer in a race-sensitive test. Creating the
+Stream does not install a watcher: consume it in a supervised fiber first.
+Custom `WatchBackend` implementations must invoke `onReady` after installation.
+Node prefers a backend supplied in the consuming context, falling back to the
+backend captured when its layer was built.
+
 ## Size Helpers
 
 <!-- typecheck -->
@@ -507,7 +549,7 @@ const checkFileSize = Effect.gen(function* () {
 
 ### SystemErrorTag Values
 
-FileSystem operations fail with `PlatformError`. Its `reason` is `BadArgument` or `SystemError`. In **4.0.0**, `SystemError._tag` is the normalized category below; match `error.reason._tag` directly (there is no `reason.tag` field):
+FileSystem operations fail with `PlatformError`. Its `reason` is `BadArgument` or `SystemError`. In **4.0.6**, `SystemError._tag` is the normalized category below; match `error.reason._tag` directly (there is no `reason.tag` field):
 
 - `AlreadyExists` - File/directory already exists
 - `BadResource` - Invalid file descriptor or handle
@@ -522,6 +564,10 @@ FileSystem operations fail with `PlatformError`. Its `reason` is `BadArgument` o
 - `WriteZero` - Write operation wrote zero bytes
 
 For an unknown error at a boundary, `PlatformError.isPlatformError(value)` narrows it to the wrapper before inspecting `reason`.
+
+Node/Deno classify native `EPERM` as `PermissionDenied` in 4.0.6. Node's
+`realPath` also handles readable Windows AppContainer paths with inaccessible
+ancestors; do not add an ancestor-access precheck that rejects such paths.
 
 ### Error Handling Pattern
 

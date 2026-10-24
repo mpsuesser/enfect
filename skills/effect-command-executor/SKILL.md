@@ -5,16 +5,23 @@ description: Spawn and manage child processes using Effect's ChildProcess module
 
 # Child Process Execution with Effect v4
 
-Targets **Effect 4.0.0**, checked against the `effect@4.0.0` source tag. Keep platform packages on the same version. The process API is marked `@stability unstable`, so check contracts again before a minor-version upgrade.
+Targets **Effect 4.0.6**, checked against the `effect@4.0.6` source tag. Keep platform packages on the same version. The process API is marked `@stability unstable`, so check contracts again before a minor-version upgrade.
 
 ## Overview
 
-On POSIX, Node process-group cleanup waits for the leader and descendants. Without
-`forceKillAfter`, cleanup waits up to one second without escalating. With it,
-the group receives SIGKILL at the deadline, then a final bounded wait. Native
-timers drive escalation even under TestClock. `exitCode` / `isRunning` describe
-the leader, not all descendants; do not use virtual time alone to prove OS cleanup.
-On Windows, Node uses `taskkill` for tree termination and waits for the leader.
+On POSIX, Node process-group cleanup signals the group. Without `forceKillAfter`,
+it waits **indefinitely for the leader**, then gives remaining group members up
+to one second to exit; it never escalates to SIGKILL. With `forceKillAfter`, the
+group is escalated at the configured deadline if needed (even if the leader
+already exited nonzero), followed by a final wait of up to one second. Native
+timers drive termination even under TestClock. `exitCode` / `isRunning` describe
+the leader, not all descendants; virtual time alone cannot prove OS cleanup.
+On Windows, `taskkill` runs only while the leader is running. Descendants that
+outlive an already-exited leader are not cleaned up by that path.
+
+The Node adapter handles late stdin/additional-input-descriptor writable errors
+after process exit; callers should still drain output and handle typed failures
+inside the scope that owns the process.
 
 The `ChildProcess` module provides type-safe, composable process execution with automatic resource cleanup via `Scope`. Commands are AST values — built first with `make` and `pipeTo`, then executed via the `ChildProcessSpawner` service.
 

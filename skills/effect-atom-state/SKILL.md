@@ -7,7 +7,7 @@ description: Implement reactive state management with Effect Atom for React appl
 
 Effect Atom is a reactive state management library for Effect that seamlessly integrates with React.
 
-`@effect/atom-react@4.0.0` requires React `>=19.0.0 <20.0.0`.
+`@effect/atom-react@4.0.6` requires React `>=19.0.0 <20.0.0`.
 Keep the adapter at the same version as `effect`; core atoms live in `effect/reactivity`, and
 React bindings live in `@effect/atom-react` (`packages/atom/react` upstream).
 Core reactivity APIs carry `@stability unstable` and may break in minor releases.
@@ -15,7 +15,7 @@ Core reactivity APIs carry `@stability unstable` and may break in minor releases
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Inspect `git show effect@4.0.0:<path>` there for this baseline; main may be ahead.
+Inspect `git show effect@4.0.6:<path>` there for this baseline; main may be ahead.
 
 Reference this for:
 
@@ -161,7 +161,12 @@ Use `Atom.fn` with `Effect.fnUntraced` for async operations:
   failures are retained in concurrent mode; it still exposes one `AsyncResult`,
   not a per-invocation result log.
 
-```typescript
+React `useAtomSet` / `useAtom` modes `promise` and `promiseExit` observe the
+atom's **next settled state**, not a result correlated to that particular write.
+Overlapping callers can receive another write's result; serialize calls when
+each caller requires its own outcome.
+
+```tsx
 import * as Atom from "effect/reactivity/Atom"
 import { useAtomValue, useAtomSet } from "@effect/atom-react"
 import { Effect, Exit } from "effect"
@@ -182,15 +187,20 @@ function LogComponent() {
 
 **With services using Atom.runtime:**
 
-```typescript
-class Users extends Context.Service<Users>()("app/Users", {
-  make: Effect.gen(function* () {
-    const create = (name: string) => Effect.succeed({ id: 1, name })
-    return { create } as const
-  }),
-}) {}
+<!-- typecheck -->
+```ts
+import { Context, Effect, Layer } from 'effect';
+import { Atom } from 'effect/reactivity';
 
-const runtimeAtom = Atom.runtime(Users.layer)
+class Users extends Context.Service<Users, {
+	readonly create: (name: string) => Effect.Effect<{ readonly id: number; readonly name: string }>;
+}>()('app/Users') {}
+
+const usersLayer = Layer.effect(Users, Effect.gen(function* () {
+	return Users.of({ create: (name) => Effect.succeed({ id: 1, name }) });
+}));
+
+const runtimeAtom = Atom.runtime(usersLayer)
 
 // runtimeAtom.fn provides service access
 const createUserAtom = runtimeAtom.fn(
@@ -199,7 +209,13 @@ const createUserAtom = runtimeAtom.fn(
     return yield* users.create(name)
   })
 )
+```
 
+```tsx
+import { useAtomSet } from '@effect/atom-react';
+import { Exit } from 'effect';
+
+// Uses createUserAtom from the module above.
 function CreateUserComponent() {
   // mode: "promiseExit" for async handlers with Exit result
   const createUser = useAtomSet(createUserAtom, { mode: "promiseExit" })
@@ -218,7 +234,7 @@ function CreateUserComponent() {
 
 **Reading result state:**
 
-```typescript
+```tsx
 function UserList() {
   const [result, createUser] = useAtom(createUserAtom)  // AsyncResult<User, Error>
 
@@ -291,9 +307,63 @@ Atom.runtime.addGlobalLayer(
 );
 ```
 
+Seeded runtime replacements retain the factory's global layers and Reactivity
+service. `runtime.subscriptionRef(...)` includes runtime-layer construction
+errors in its `AsyncResult` failure type; handle them as well as ref-creation
+errors instead of narrowing the result to the latter alone.
+
+For stream-backed `runtime.fn` actions with reactivity keys, invalidation occurs
+only when the stream ends successfully—not on failure, interruption, or
+replacement by a newer write. A long-lived stream has not committed merely
+because it emitted a value.
+
+### Hydration and initial values
+
+Hydrated effect/stream atoms **run on mount by default**, retaining their seed
+while establishing dependency tracking. To deliberately skip that first effect
+run, pass `skipInitialRun: true` to `Atom.serializable` or the third argument of
+`Atom.initialValue` used in registry initialization.
+
+<!-- typecheck -->
+```ts
+import { Effect } from 'effect';
+import * as Schema from 'effect/Schema';
+import { AsyncResult, Atom, AtomRegistry } from 'effect/reactivity';
+
+const count = Atom.make(Effect.succeed(1)).pipe(Atom.serializable({
+	key: 'count',
+	schema: AsyncResult.Schema({ success: Schema.Number }),
+	skipInitialRun: true
+}));
+const registry = AtomRegistry.make({
+	initialValues: [Atom.initialValue(count, AsyncResult.success(1), { skipInitialRun: true })]
+});
+// The owner must dispose this registry when its UI/request lifetime ends.
+registry.dispose();
+```
+
+Skipping affects the effect/stream, not factory reads, wrappers, or reactivity
+setup. Dependencies read *inside* the effect are tracked only on its first real
+run. Refreshes and tracked-dependency changes run normally; an `Initial` seed
+never skips. Prefer the default unless avoiding the initial client run is worth
+this dependency-tracking tradeoff.
+
+Serializable codecs encode/decode `Schema.Json`. Schema-invalid hydration data
+or an unencodable streamed initial result falls back to client computation;
+defects are not swallowed. Existing subscribers receive hydration immediately,
+and older dehydrated AsyncResults do not overwrite newer results. A hydrated
+value is not a freshness guarantee—choose SWR separately.
+
 ## Pattern: AsyncResult Types (Error Handling)
 
 Atoms can return `AsyncResult` types for explicit error handling:
+
+In 4.0.6, data-last `AsyncResult.flatMap` can change the success type.
+`AsyncResult.all` rebuilds a failure's `previousSuccess` in the complete aggregate
+shape using every input's current or previous value; if any input lacks a value,
+the aggregate has no previous success. Async atom failures retain the latest
+exposed success, including `initialValue` / `setSelf` updates, not a stale
+pre-run snapshot.
 
 ```tsx
 import * as AsyncResult from 'effect/reactivity/AsyncResult';
@@ -464,6 +534,11 @@ export const wsConnection = Atom.make(
 // Finalizer runs when atom rebuilds or becomes unused
 ```
 
+Finalizer failures are logged at `References.UnhandledLogLevel` with runtime
+services; interruption-only failures are not reported. A scoped logger may
+already be closed at that point, so do not use finalizer logging as a delivery
+guarantee or silently discard cleanup failures yourself.
+
 ## Key Principles
 
 1. **Atom.fn for Async**: Use `Atom.fn()` for effects—gives automatic `waiting` flag and `AsyncResult` type
@@ -484,7 +559,7 @@ export const wsConnection = Atom.make(
 
 Use `Atom.fn` with `Effect.fnUntraced` which automatically provides `AsyncResult` with `.waiting` flag:
 
-```typescript
+```tsx
 import * as Atom from "effect/reactivity/Atom"
 import { useAtomValue, useAtomSet } from "@effect/atom-react"
 import { Effect } from "effect"
@@ -618,7 +693,7 @@ source atom for hydration or explicitly serialize the wrapper under its own key.
 
 Chainable API for handling `AsyncResult` types — replaces verbose `AsyncResult.match`/`AsyncResult.matchWithWaiting`:
 
-```typescript
+```tsx
 const UserProfile = ({ userId }: { userId: string }) => {
   const user = useAtomValue(userAtom(userId))
 
@@ -663,7 +738,7 @@ Use when an atom's side effects matter but its value doesn't need to be rendered
 
 Derive focused atoms to avoid unnecessary re-renders:
 
-```typescript
+```tsx
 // Bad: entire component re-renders when any user field changes
 const user = useAtomValue(userAtom)
 return <span>{user.name}</span>
@@ -675,6 +750,14 @@ return <span>{name}</span>
 ```
 
 Use `Atom.map` to create narrow slices of state that minimize re-render surface.
+
+`useAtomValue(atom, selector)` selects from the shared source subscription and
+caches the selection for an unchanged source. Hydration snapshots stay stable
+while any reader remains subscribed, including selectors: late Suspense readers
+hydrate from that snapshot before seeing live state. Mutations before the first
+subscriber/after the last, or a derived atom first read in a late boundary, can
+still mismatch. `windowFocusSignal` is safe without `window` (stays at 0), and
+`Atom.searchParam` writes preserve the URL hash and avoid an empty trailing `?`.
 
 ## Anti-Patterns
 
