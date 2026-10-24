@@ -8,7 +8,8 @@ You are an Effect TypeScript expert specializing in integrating Effect services 
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Browse and read files there directly to look up APIs, types, and implementations.
+Baseline: **effect@4.0.6 stable**. Read `git show effect@4.0.6:<path>`;
+the release tag takes precedence over newer main.
 
 Reference this for:
 
@@ -73,6 +74,14 @@ const runtime2 = ManagedRuntime.make(ServiceB.layer, { memoMap: appMemoMap });
 
 If you only have a single ManagedRuntime, you can omit the `memoMap` option — one is created automatically.
 
+Sharing depends on reusing the same layer objects, not merely equivalent
+recipes. Composed `provide`/`provideMerge`/`mergeAll` layers are also memoized;
+freshen the entire composition when separate allocations are intentional.
+
+The first layer-build result, including failure, is cached by a runtime. Put
+retry policy inside layer construction, or dispose and create a new runtime;
+calling `runPromise` again is not a fresh acquisition attempt.
+
 ## Running Effects
 
 A ManagedRuntime provides all the standard run methods. The runtime automatically provides the services from its layer to every effect you run.
@@ -95,13 +104,16 @@ const result = runtime.runSync(MyService.use((svc) => svc.computeSync(input)));
 
 Throws if the effect is async or fails. Use sparingly — only when you are certain the effect is synchronous.
 
-### `runtime.runFork(effect)` — Fire and forget
+### `runtime.runFork(effect)` — Owned background execution
 
 ```ts
 const fiber = runtime.runFork(MyService.use((svc) => svc.backgroundTask()));
 ```
 
-Returns a `Fiber<A, E | ER>`. The effect runs in the background. Use for fire-and-forget work.
+Returns a `Fiber<A, E | ER>`. The runtime owns its lifetime until disposal, but
+the host must still observe failure and decide restart/termination policy.
+Retain/join the fiber or install an exit observer; this is not permission to
+discard failure-significant work. Detached descendants need separate ownership.
 
 ### `runtime.runCallback(effect)` — Callback-style execution
 
@@ -130,6 +142,12 @@ or other layer services. Layer finalization runs uninterruptibly by default;
 await `dispose()` / `disposeEffect` before treating shutdown as complete. This
 ordering does not supervise work deliberately detached from the runtime.
 
+External overlapping `dispose()` / `disposeEffect` calls await ongoing cleanup.
+Calls made by runtime-owned fibers, their descendants, or their finalizers return
+without waiting for that same disposal, preventing self-deadlock. Such an internal
+return is not a shutdown-completion signal. Cleanup is uninterruptible;
+interrupting an external waiter stops only its wait, not disposal itself.
+
 ### Disposing the runtime
 
 ```ts
@@ -150,11 +168,12 @@ const result = await runtime.runPromise(program);
 ### Shutdown hook pattern
 
 ```ts
-const shutdown = () => {
-	void runtime.dispose();
+// The host's awaited shutdown lifecycle owns both completion and rejection.
+const shutdown = async () => {
+	await stopAcceptingRequests();
+	await runtime.dispose();
 };
-process.once('SIGINT', shutdown);
-process.once('SIGTERM', shutdown);
+host.onShutdown(shutdown); // host awaits this Promise and reports rejection
 ```
 
 **Critical**: Always dispose ManagedRuntime on shutdown. Unlike `runMain` which handles this automatically, ManagedRuntime requires explicit lifecycle management.
@@ -271,12 +290,11 @@ app.post('/todos', async (c) => {
 	return c.json(todo, 201);
 });
 
-// Shutdown
-const shutdown = () => {
-	void runtime.dispose();
-};
-process.once('SIGINT', shutdown);
-process.once('SIGTERM', shutdown);
+// The hosting server awaits shutdown and reports rejection.
+host.onShutdown(async () => {
+	await stopAcceptingRequests();
+	await runtime.dispose();
+});
 ```
 
 ### Express
@@ -302,10 +320,12 @@ app.get('/users/:id', async (req, res) => {
 
 // Graceful shutdown
 const server = app.listen(3000);
-process.once('SIGTERM', () => {
-	server.close(() => {
-		void runtime.dispose();
+// Adapt server.close into the host's awaited lifecycle; do not drop disposal.
+host.onShutdown(async () => {
+	await new Promise<void>((resolve, reject) => {
+		server.close((error) => error ? reject(error) : resolve());
 	});
+	await runtime.dispose();
 });
 ```
 
@@ -337,17 +357,33 @@ export const handler = async (event: APIGatewayEvent) => {
 ```ts
 import { ManagedRuntime } from 'effect';
 
-// Module-level runtime for warm reuse while the Worker isolate stays alive
-const runtime = ManagedRuntime.make(AppLayer);
-
 export default {
 	async fetch(request: Request): Promise<Response> {
-		const result = await runtime.runPromise(
-			MyService.use((svc) => svc.handle(request))
-		);
-		return new Response(JSON.stringify(result), {
-			headers: { 'content-type': 'application/json' }
-		});
+		// Request-bound clients/bindings must not leak into a warm global runtime.
+		const runtime = ManagedRuntime.make(makeRequestLayer(request));
+		try {
+			return await runtime.runPromise(MyService.use((svc) => svc.handle(request)));
+		} finally {
+			await runtime.dispose();
+		}
+	}
+};
+```
+
+Reuse an isolate-level runtime only for services/resources the host permits
+across requests. Keep request-scoped I/O, bindings, cancellation, and background
+work within the request or the host's explicit extended-lifetime mechanism.
+
+<!-- typecheck -->
+```ts
+import { Effect, Layer, ManagedRuntime } from 'effect';
+
+const hostOperation = async () => {
+	const runtime = ManagedRuntime.make(Layer.empty);
+	try {
+		return await runtime.runPromise(Effect.succeed('ok'));
+	} finally {
+		await runtime.dispose();
 	}
 };
 ```
@@ -395,7 +431,7 @@ ManagedRuntime.isManagedRuntime(value); // type guard
 ## Common Mistakes
 
 1. **Forgetting to dispose** — Leaks resources. Wire up shutdown hooks for long-running hosts; in serverless, keep warm runtimes alive and dispose only when the runtime is no longer needed or the host exposes a real shutdown/lifecycle hook.
-2. **Creating a runtime per request** — Expensive. Create once at module/app scope, share across handlers.
+2. **Choosing lifetime without checking the host** — Reuse an app runtime on long-lived servers; request-bound edge resources may require a runtime per request with awaited disposal.
 3. **Not sharing MemoMap** — If you have multiple runtimes, layers won't be deduplicated without a shared MemoMap.
 4. **Using runSync for async effects** — Will throw. Use `runPromise` for anything that might be async.
 5. **Catching errors outside Effect** — Prefer `Effect.catchTag` / `Effect.catchTags` inside the effect pipeline before calling `runPromise`, so errors are handled structurally rather than as untyped promise rejections.

@@ -10,7 +10,8 @@ This skill provides a step-by-step template for converting existing async/Promis
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Browse and read files there directly to look up APIs, types, and implementations.
+Baseline: **effect@4.0.6 stable**. Use `git show effect@4.0.6:<path>`;
+keep historical Before examples as migration input, not current guidance.
 
 Reference this for:
 
@@ -20,41 +21,39 @@ Reference this for:
 - Migration guide: `MIGRATION.md`
 - Effect source: `packages/effect/src/`
 
-## The 7-Step Migration Template
+## The 8-Step Migration Template
 
 ### Step 1: Define the Service Interface
 
-Extract a named `Interface` type with Effect-returning methods. Keep parameter and return types identical to the original module — only swap `Promise<T>` for `Effect.Effect<T, E>`.
+Extract a named `Interface` type with Effect-returning methods. Preserve the
+caller's successful values, but make every possible failure explicit in `E`.
+Keep an established service layout; otherwise use file-local exports and an
+ES-module namespace projection, not a TypeScript namespace.
 
 ```typescript
 import type { Effect } from 'effect';
 
-export namespace MyModule {
-	export interface Interface {
-		readonly get: (id: string) => Effect.Effect<Item, MyModuleError>;
-		readonly list: Effect.Effect<ReadonlyArray<Item>>;
-	}
+export interface Interface {
+	readonly get: (id: string) => Effect.Effect<Item, MyModuleError>;
+	readonly list: Effect.Effect<ReadonlyArray<Item>, MyModuleError>;
 }
 ```
 
 ### Step 2: Declare the Service Class
 
-Empty class body — no `make:`, no `static readonly layer`. The interface and service class live in the same namespace.
+Empty class body — no `make:`, no `static readonly layer`. The interface and
+service class live in the same ES module.
 
 ```typescript
 import { Context } from 'effect';
 import type { Effect } from 'effect';
 
-export namespace MyModule {
-	export interface Interface {
-		readonly get: (id: string) => Effect.Effect<Item, MyModuleError>;
-		readonly list: Effect.Effect<ReadonlyArray<Item>>;
-	}
-
-	export class Service extends Context.Service<Service, Interface>()(
-		'@app/MyModule'
-	) {}
+export interface Interface {
+	readonly get: (id: string) => Effect.Effect<Item, MyModuleError>;
+	readonly list: Effect.Effect<ReadonlyArray<Item>, MyModuleError>;
 }
+
+export class Service extends Context.Service<Service, Interface>()('@app/MyModule') {}
 ```
 
 ### Step 3: Build the Raw Layer
@@ -64,36 +63,25 @@ Construct the service inside `Layer.effect`, capturing dependencies via `yield*`
 ```typescript
 import { Effect, Layer, Context } from 'effect';
 
-export namespace MyModule {
-	export interface Interface {
-		readonly get: (id: string) => Effect.Effect<Item, MyModuleError>;
-		readonly list: Effect.Effect<ReadonlyArray<Item>>;
-	}
+// Interface and Service as above; dependency failures must match MyModuleError
+// or be translated into it at this boundary.
+export const layer = Layer.effect(
+	Service,
+	Effect.gen(function* () {
+		const config = yield* Config.Service;
+		const db = yield* Database.Service;
 
-	export class Service extends Context.Service<Service, Interface>()(
-		'@app/MyModule'
-	) {}
-
-	export const layer = Layer.effect(
-		Service,
-		Effect.gen(function* () {
-			const config = yield* Config.Service;
-			const db = yield* Database.Service;
-
-			const get = Effect.fn('MyModule.get')(function* (id: string) {
-				const cfg = yield* config.get();
-				return yield* db.findById(cfg.table, id);
-			});
-
-			const list = Effect.gen(function* () {
-				const cfg = yield* config.get();
-				return yield* db.listAll(cfg.table);
-			});
-
-			return Service.of({ get, list });
-		})
-	);
-}
+		const get = Effect.fn('MyModule.get')(function* (id: string) {
+			const cfg = yield* config.get();
+			return yield* db.findById(cfg.table, id);
+		});
+		const list = Effect.gen(function* () {
+			const cfg = yield* config.get();
+			return yield* db.listAll(cfg.table);
+		});
+		return Service.of({ get, list });
+	})
+);
 ```
 
 The layer's type exposes unsatisfied requirements (`Config.Service | Database.Service`). This is intentional — the raw layer declares its true dependency graph.
@@ -105,14 +93,11 @@ Compose the wired `defaultLayer` directly in the normal case. Use `Layer.suspend
 ```typescript
 import { Layer } from 'effect';
 
-export namespace MyModule {
-	// ... Interface, Service, layer above ...
-
-	export const defaultLayer = layer.pipe(
-		Layer.provide(Config.defaultLayer),
-		Layer.provide(Database.defaultLayer)
-	);
-}
+export const defaultLayer = layer.pipe(
+	Layer.provide(Config.defaultLayer),
+	Layer.provide(Database.defaultLayer)
+);
+export * as MyModule from './my-module.js';
 ```
 
 If the module really needs deferred composition:
@@ -149,7 +134,7 @@ export function makeRuntime<I, S, E>(
 }
 ```
 
-Then in the module namespace, create the bridge from the service and its default layer:
+Then at the non-Effect boundary, create the bridge from the service and its default layer:
 
 ```typescript
 const { runPromise, dispose } = makeRuntime(MyModule.Service, MyModule.defaultLayer);
@@ -161,6 +146,11 @@ await `dispose()` on shutdown. Disposal interrupts managed fibers and waits for
 their cleanup before releasing layer resources. A shared memo map deduplicates
 acquisition, but does not remove each runtime's disposal obligation.
 
+Reuse identical layer objects: 4.0.6 memoizes composed layers too. Runtime layer
+build failures are cached; retry acquisition inside the layer or dispose and
+create another runtime. External concurrent disposal calls join cleanup, but
+runtime-owned fibers/finalizers do not wait on their own disposal.
+
 > **Memo-map nuance:** Keep the bridge `memoMap` shared (the root `Layer.makeMemoMapUnsafe()` above) so every per-service runtime reuses the same layer allocations. Do not `Layer.forkMemoMap` it unless a specific child runtime intentionally needs isolated allocations — a forked memo map can read the parent's existing allocations but builds new ones in isolation, which defeats the deduplication this bridge exists to provide.
 
 ### Step 6: Keep Boundary Facades Only When Still Needed
@@ -168,16 +158,13 @@ acquisition, but does not remove each runtime's disposal obligation.
 If non-Effect callers still exist, wrap each service method in a thin `async` function that delegates to `runPromise`. Do not keep facades as the primary API once Effect callers can `yield*` the service directly.
 
 ```typescript
-export namespace MyModule {
-	// ... Interface, Service, layer, defaultLayer above ...
+// Boundary facade module, separate from the service module.
+export async function get(id: string): Promise<Item> {
+	return runPromise((svc) => svc.get(id));
+}
 
-	export async function get(id: string): Promise<Item> {
-		return runPromise((svc) => svc.get(id));
-	}
-
-	export async function list(): Promise<ReadonlyArray<Item>> {
-		return runPromise((svc) => svc.list);
-	}
+export async function list(): Promise<ReadonlyArray<Item>> {
+	return runPromise((svc) => svc.list);
 }
 ```
 
@@ -264,90 +251,72 @@ export namespace Items {
 
 ### After: Effect Service with Backward-Compatible Facades
 
-```typescript
-import { Effect, Layer, Schema, Context } from 'effect';
-import { makeRuntime } from './runtime-bridge';
+The service module below is self-contained. Its raw layer exposes the HTTP
+transport requirement; the composition root supplies the release-matched Bun
+transport. HTTP modules are `@stability unstable` in 4.0.6.
 
-class ItemsError extends Schema.TaggedError<ItemsError>()('ItemsError', {
-	message: Schema.String
+<!-- typecheck -->
+```typescript
+import { Context, Effect, Layer } from 'effect';
+import * as Schema from 'effect/Schema';
+import { HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/http';
+
+class Item extends Schema.Class<Item>('Item')({
+	id: Schema.String,
+	name: Schema.String
 }) {}
 
-export namespace Items {
-	// Step 1: Interface
-	export interface Interface {
-		readonly get: (id: string) => Effect.Effect<Item, ItemsError>;
-		readonly list: Effect.Effect<ReadonlyArray<Item>>;
-	}
+class ItemsError extends Schema.TaggedError<ItemsError>()('ItemsError', {
+	operation: Schema.String,
+	cause: Schema.Unknown
+}) {}
 
-	// Step 2: Service class
-	export class Service extends Context.Service<Service, Interface>()(
-		'@app/Items'
-	) {}
-
-	// Step 3: Raw layer
-	export const layer = Layer.effect(
-		Service,
-		Effect.gen(function* () {
-			const config = yield* AppConfig.Service;
-
-			const get = Effect.fn('Items.get')(function* (id: string) {
-				const cfg = yield* config.load();
-				const res = yield* Effect.tryPromise({
-					try: () => fetch(`${cfg.apiUrl}/items/${id}`),
-					catch: () =>
-						new ItemsError({ message: `Item ${id} not found` })
-				});
-				return yield* Effect.tryPromise({
-					try: () => res.json() as Promise<Item>,
-					catch: () =>
-						new ItemsError({ message: 'Failed to parse item' })
-				});
-			});
-
-			const list = Effect.gen(function* () {
-				const cfg = yield* config.load();
-				const res = yield* Effect.tryPromise({
-					try: () => fetch(`${cfg.apiUrl}/items`),
-					catch: () =>
-						new ItemsError({ message: 'Failed to list items' })
-				});
-				return yield* Effect.tryPromise({
-					try: () => res.json() as Promise<ReadonlyArray<Item>>,
-					catch: () =>
-						new ItemsError({ message: 'Failed to parse items' })
-				});
-			});
-
-			return Service.of({ get, list });
-		})
-	);
-
-	// Step 4: Default layer
-	export const defaultLayer = layer.pipe(
-		Layer.provide(AppConfig.defaultLayer)
-	);
-
-	// Step 5: Runtime bridge
-	const runtime = makeRuntime(Service, defaultLayer);
-	const { runPromise } = runtime;
-	export const dispose = runtime.dispose; // host awaits this at shutdown
-
-	// Step 6: Async facades (remove once all callers migrate)
-	export async function get(id: string): Promise<Item> {
-		return runPromise((svc) => svc.get(id));
-	}
-
-	export async function list(): Promise<ReadonlyArray<Item>> {
-		return runPromise((svc) => svc.list);
-	}
+export interface Interface {
+	readonly get: (id: string) => Effect.Effect<Item, ItemsError>;
+	readonly list: Effect.Effect<ReadonlyArray<Item>, ItemsError>;
 }
 
-// Step 7: Callers migrate from facade to service
-// const item = yield* Effect.promise(() => Items.get(id));
-//   becomes:
-// const items = yield* Items.Service;
-// const item = yield* items.get(id);
+export class Service extends Context.Service<Service, Interface>()('@app/Items') {}
+
+export const layer = Layer.effect(Service, Effect.gen(function* () {
+	const client = (yield* HttpClient.HttpClient).pipe(
+		HttpClient.mapRequest(HttpClientRequest.prependUrl('https://api.example.com')),
+		HttpClient.filterStatusOk
+	);
+	const get = Effect.fn('Items.get')(function* (id: string) {
+		return yield* client.get(`/items/${encodeURIComponent(id)}`).pipe(
+			Effect.flatMap(HttpClientResponse.schemaBodyJson(Item)),
+			Effect.mapError((cause) => new ItemsError({ operation: 'get', cause }))
+		);
+	});
+	const list = client.get('/items').pipe(
+		Effect.flatMap(HttpClientResponse.schemaBodyJson(Schema.Array(Item))),
+		Effect.mapError((cause) => new ItemsError({ operation: 'list', cause }))
+	);
+	return Service.of({ get, list });
+}));
+// At the owning module boundary: export * as Items from './items.js';
 ```
+
+```typescript
+// items-async.ts — only while Promise callers remain
+import { ManagedRuntime, Layer } from 'effect';
+import { BunHttpClient } from '@effect/platform-bun';
+import { Items } from './items.js';
+
+const defaultLayer = Items.layer.pipe(Layer.provide(BunHttpClient.layer));
+const runtime = ManagedRuntime.make(defaultLayer);
+export const get = (id: string) => runtime.runPromise(Items.Service.use((svc) => svc.get(id)));
+export const list = () => runtime.runPromise(Items.Service.use((svc) => svc.list));
+export const dispose = () => runtime.dispose(); // host awaits this at shutdown
+```
+
+The adapter checks status before decoding, preserves transport/decode errors in
+`ItemsError`, and lets the HTTP transport propagate cancellation. For a legacy SDK
+that still returns promises, use `Effect.tryPromise({ try: (signal) => ..., catch })`.
+Declare `signal` as an ordinary parameter: signal creation is arity-sensitive
+(`promise`/`tryPromise`: at least one parameter; `callback`: at least two).
+Default/rest parameters do not count toward that arity.
 
 ## Migration Checklist
 

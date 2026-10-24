@@ -7,6 +7,17 @@ description: Test Effect concurrency primitives including PubSub, Deferred, Latc
 
 This skill provides patterns for testing Effect's concurrency primitives: fibers, latches, deferreds, PubSub, SubscriptionRef, and streams.
 
+Baseline: **effect@4.0.6 stable**, with matching `@effect/vitest` (an unstable
+integration). Read exact `packages/vitest/src/index.ts`, `internal/internal.ts`,
+under `packages/vitest/src/`, and `packages/effect/src/testing/TestClock.ts` via
+`git show effect@4.0.6:<path>`. Its Vitest peer range is `>=5.0.0 <6.0.0`.
+Main may describe later behavior.
+
+The `@effect/vitest` examples below are source-reviewed against that tag, but
+are not marked for this repository's documentation typecheck: the companion
+package is intentionally absent and requires Vitest 5 rather than its Vitest 3
+runner. Core-only standalone examples retain their typecheck markers.
+
 ## Core Principles
 
 **CRITICAL**: Choose the correct coordination primitive based on what you need to synchronize.
@@ -33,7 +44,7 @@ advancement. Prefer a subscription-first test seam to arbitrary delays.
 Use `Effect.yieldNow` when you need to allow other fibers to execute. This is preferred over `TestClock.adjust` for non-time-dependent code.
 
 ```typescript
-import { it } from '@effect/vitest';
+import { it, expect } from '@effect/vitest';
 import { Effect, Exit, Fiber, Latch } from 'effect';
 
 it.effect('fiber polling with yieldNow', () =>
@@ -58,7 +69,7 @@ it.effect('fiber polling with yieldNow', () =>
 `Latch.make()` creates a gate that blocks fibers until opened:
 
 ```typescript
-import { it } from '@effect/vitest';
+import { it, expect } from '@effect/vitest';
 import { Effect, Fiber, Latch } from 'effect';
 
 it.effect('latch coordination', () =>
@@ -83,6 +94,7 @@ it.effect('latch coordination', () =>
 
 ### Latch Operations
 
+<!-- typecheck -->
 ```typescript
 import { Latch } from 'effect';
 
@@ -100,7 +112,7 @@ latch.whenOpen; // Run effect only when latch is open
 Use `Deferred` when one fiber needs to signal another with a value:
 
 ```typescript
-import { it } from '@effect/vitest';
+import { it, expect } from '@effect/vitest';
 import { Effect, Deferred, Fiber } from 'effect';
 
 it.effect('deferred signaling', () =>
@@ -123,6 +135,7 @@ it.effect('deferred signaling', () =>
 ### fiber.pollUnsafe() - Check Completion Without Blocking
 
 ```typescript
+import { expect } from '@effect/vitest';
 import { Exit, Fiber } from 'effect';
 
 declare const fiber: Fiber.Fiber<string>;
@@ -148,7 +161,7 @@ expect(fiber.pollUnsafe()).toEqual(Exit.succeed('result'));
 Use `Effect.scoped` to manage PubSub subscription lifecycle:
 
 ```typescript
-import { it } from '@effect/vitest';
+import { it, expect } from '@effect/vitest';
 import { Effect, PubSub } from 'effect';
 
 it.effect('verify published events', () =>
@@ -178,7 +191,7 @@ Both events are published **before** `PubSub.takeAll`, so it returns immediately
 When testing a service that publishes events:
 
 ```typescript
-import { it } from '@effect/vitest';
+import { it, expect } from '@effect/vitest';
 import { Effect, PubSub, Context, Layer } from 'effect';
 
 interface UserEvent {
@@ -227,7 +240,7 @@ it.effect('should publish user created event', () =>
 ### Concurrent Publisher/Subscriber Testing
 
 ```typescript
-import { it } from '@effect/vitest';
+import { it, expect } from '@effect/vitest';
 import { Deferred, Effect, PubSub, Fiber, Latch, Array as A } from 'effect';
 
 it.effect('concurrent publishers and subscribers', () =>
@@ -272,7 +285,7 @@ it.effect('concurrent publishers and subscribers', () =>
 The latch pattern ensures the stream subscription is ready before mutations:
 
 ```typescript
-import { it } from '@effect/vitest';
+import { it, expect } from '@effect/vitest';
 import { Effect, Fiber, Latch, Number } from 'effect';
 import { Stream, SubscriptionRef } from 'effect';
 
@@ -314,7 +327,7 @@ it.effect('multiple subscribers can receive changes', () =>
 ### Testing Subscription Interruption
 
 ```typescript
-import { it } from '@effect/vitest';
+import { it, expect } from '@effect/vitest';
 import { Effect, Exit, Fiber, Latch, Number } from 'effect';
 import { Pull, Stream, SubscriptionRef } from 'effect';
 
@@ -346,7 +359,7 @@ it.effect('subscriptions are interruptible', () =>
 ### Collecting Stream Results
 
 ```typescript
-import { it } from '@effect/vitest';
+import { it, expect } from '@effect/vitest';
 import { Effect } from 'effect';
 import { Stream } from 'effect';
 
@@ -365,7 +378,7 @@ it.effect('should collect stream elements', () =>
 ### Testing Stream Side Effects
 
 ```typescript
-import { it } from '@effect/vitest';
+import { it, expect } from '@effect/vitest';
 import { Effect, Ref } from 'effect';
 import { Stream } from 'effect';
 
@@ -387,7 +400,7 @@ it.effect('should track side effects', () =>
 ### Testing Stream Errors
 
 ```typescript
-import { it } from '@effect/vitest';
+import { it, expect } from '@effect/vitest';
 import { Effect, Exit, Schema } from 'effect';
 import { Stream } from 'effect';
 
@@ -418,7 +431,7 @@ it.effect('should handle stream errors', () =>
 ### Testing Stream Finalization
 
 ```typescript
-import { it } from '@effect/vitest';
+import { it, expect } from '@effect/vitest';
 import { Effect, Ref } from 'effect';
 import { Stream } from 'effect';
 
@@ -451,6 +464,13 @@ work has started before interrupting it:
   and verify remaining finalizers still run.
 - `ManagedRuntime.dispose`: verify request cleanup can use layer services before
   those services are released.
+- Cache abandonment: gate the old finalizer and prove a new lookup can start
+  before that finalizer completes; interruption is never negatively cached.
+- `FiberHandle` / `FiberMap` replacement: prove replacement starts without waiting
+  for old cleanup, then prove owner shutdown still waits for the replaced fiber.
+- Scope versus runtime close: a second `Scope.close` does not join the first
+  close, but external overlapping `ManagedRuntime.dispose` calls do; runtime-owned
+  finalizers can request disposal without waiting on themselves.
 - Queue batches: offer fewer than `takeN` requests, verify the taker remains
   pending, then `end` or `fail` and assert the short final batch precedes the
   terminal outcome. For PubSub, test the `end` value with `take`, not `takeUpTo`,
@@ -459,7 +479,7 @@ work has started before interrupting it:
 ### Testing Fiber Interruption
 
 ```typescript
-import { it } from '@effect/vitest';
+import { it, expect } from '@effect/vitest';
 import { Effect, Exit, Fiber, Cause } from 'effect';
 
 it.effect('should handle interruption', () =>
@@ -478,7 +498,7 @@ it.effect('should handle interruption', () =>
 ### Testing Interrupted-Only Cause
 
 ```typescript
-import { it } from '@effect/vitest';
+import { it, expect } from '@effect/vitest';
 import { Effect, Exit, Fiber, Cause } from 'effect';
 
 it.effect('should have interrupted-only cause', () =>
@@ -500,8 +520,19 @@ it.effect('should have interrupted-only cause', () =>
 
 Use `TestClock` only when testing time-dependent behavior like delays, timeouts, or schedules.
 
+`adjust` / `setTime` follow sleeps scheduled after multiple scheduler hops;
+avoid adding arbitrary extra yields to compensate for older clock behavior.
+Clock diagnostics remain visible even with `TestConsole`. Still use a readiness
+signal when advancing time depends on a specific operation having begun.
+
+`@effect/vitest`'s `beforeEach` and `beforeAll` accept returned Effects requiring
+only `Scope`: per-test resources close after that test; suite resources close
+after `afterAll` hooks. Timed-out setup is interrupted before scope cleanup;
+Vitest can stop waiting when cleanup exceeds its hook timeout. Return the Effect
+instead of starting an unowned `runPromise` in a hook.
+
 ```typescript
-import { it } from '@effect/vitest';
+import { it, expect } from '@effect/vitest';
 import { Effect, Fiber, Duration } from 'effect';
 import { TestClock } from 'effect/testing';
 

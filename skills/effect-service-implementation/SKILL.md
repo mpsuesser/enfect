@@ -10,7 +10,8 @@ Design and implement Effect services as focused capabilities that compose into c
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Browse and read files there directly to look up APIs, types, and implementations.
+Baseline: **effect@4.0.6 stable**. Read source via
+`git show effect@4.0.6:<path>` rather than newer main.
 
 Reference this for:
 
@@ -134,6 +135,7 @@ Do not wrap every `defaultLayer` in `Layer.unwrap(Effect.sync(...))` by default.
 
 If the project already standardizes class statics or another current Effect v4 tag declaration, preserve that style. For example, an established class-statics service remains acceptable:
 
+<!-- typecheck -->
 ```typescript
 import { Context, Crypto, Effect, Layer } from 'effect';
 import { NodeCrypto } from '@effect/platform-node';
@@ -148,7 +150,7 @@ export class IdGenerator extends Context.Service<
 		const crypto = yield* Crypto.Crypto;
 		// `randomUUIDv4` fails with PlatformError; UUID generation is
 		// unrecoverable here, so collapse it into a defect with `Effect.orDie`.
-		return { generate: crypto.randomUUIDv4.pipe(Effect.orDie) };
+		return { generate: crypto.randomUUIDv4().pipe(Effect.orDie) };
 	})
 }) {
 	static readonly layer = Layer.effect(this, this.make);
@@ -164,6 +166,7 @@ Function-style keys are also current Effect v4. If a project standardizes them, 
 
 ## Anti-Pattern: Monolithic Services
 
+<!-- typecheck -->
 ```typescript
 import { Effect, Layer, Context } from 'effect';
 
@@ -293,9 +296,10 @@ Promote it into its own service when any of these are true:
 // git.ts
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
 import { Context, Effect, Layer } from 'effect';
+import type { PlatformError } from 'effect/PlatformError';
 
 export interface Interface {
-	readonly run: (args: ReadonlyArray<string>) => Effect.Effect<string>;
+	readonly run: (args: ReadonlyArray<string>) => Effect.Effect<string, PlatformError>;
 }
 
 export class Service extends Context.Service<Service, Interface>()('@app/Git') {}
@@ -319,6 +323,10 @@ export * as Git from './git.js';
 ```
 
 This keeps repeated platform details, policy, and formatting logic out of downstream callers.
+
+Capturing the spawner removes its service requirement, not its `PlatformError`
+channel. Keep that error explicit or deliberately translate it into the adapter's
+public error vocabulary; do not declare a fallible platform operation infallible.
 
 ## Pattern: Coordinator Services for Lifecycle State
 
@@ -440,7 +448,7 @@ export const layer = Layer.effect(
 		// UUID generation failure is unrecoverable here, so collapse the
 		// PlatformError into a defect at this boundary with `Effect.orDie`.
 		return Service.of({
-			generate: crypto.randomUUIDv4.pipe(Effect.orDie)
+			generate: crypto.randomUUIDv4().pipe(Effect.orDie)
 		});
 	})
 );
@@ -451,6 +459,10 @@ export * as IdGenerator from './id-generator.js';
 ```
 
 A genuinely dependency-free service can still keep `layer` self-contained with `Layer.succeed` and skip `defaultLayer` (see the rule of thumb below).
+
+In 4.0.6, UUID generation is a **method**: `randomUUIDv4()` / `randomUUIDv7()`
+return the default hyphenated string; `{ format: 'bytes' }` selects 16 UUID bytes.
+These `Crypto` APIs remain `@stability unstable`.
 
 ## Pattern: Composing Capabilities
 

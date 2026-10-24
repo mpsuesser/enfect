@@ -127,6 +127,7 @@ Use defects or `Effect.orDie` for:
 
 ### When to Use Error Channel vs Defects
 
+<!-- typecheck -->
 ```typescript
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
@@ -200,6 +201,7 @@ Effect v4 provides three ways to define error classes. Choose based on context:
 
 Schema-validated, automatically tagged with `_tag`, catchable via `catchTag`. Use for all cross-module and public API errors.
 
+<!-- typecheck -->
 ```typescript
 import * as Schema from 'effect/Schema';
 
@@ -218,6 +220,7 @@ error._tag; // "NotFound"
 
 Schema-validated but no automatic `_tag`. Use when you need a custom discriminator field (e.g., HttpApiError types use `_tag: Schema.tag("NotFound")` manually).
 
+<!-- typecheck -->
 ```typescript
 import * as Schema from 'effect/Schema';
 
@@ -260,6 +263,7 @@ Always use `Schema.TaggedError` for domain errors with a `message` field.
 
 ### Basic Tagged Error
 
+<!-- typecheck -->
 ```typescript
 import * as Schema from 'effect/Schema';
 
@@ -293,6 +297,7 @@ const error = new ValidationError({
 
 For bindings that wrap a single external system, use a `reason` literal union to keep the error surface compact while remaining precise:
 
+<!-- typecheck -->
 ```typescript
 import * as Schema from 'effect/Schema';
 
@@ -319,6 +324,7 @@ export class ApiError extends Schema.TaggedError<ApiError>()(
 
 When reason variants carry distinct payloads, model each as a separate `TaggedError` and compose with `Schema.Union`. This enables v4's `catchReason` and `catchReasons`:
 
+<!-- typecheck -->
 ```typescript
 import * as Schema from 'effect/Schema';
 
@@ -357,6 +363,7 @@ export class AiError extends Schema.TaggedError<AiError>()(
 
 For errors that map to HTTP responses, use the `httpApiStatus` annotation:
 
+<!-- typecheck -->
 ```typescript
 import * as Schema from 'effect/Schema';
 
@@ -381,6 +388,7 @@ export class EntityNotFound extends Schema.TaggedError<EntityNotFound>()(
 
 ### Error with Custom Properties
 
+<!-- typecheck -->
 ```typescript
 import * as Schema from 'effect/Schema';
 
@@ -414,6 +422,7 @@ When wrapping upstream errors in domain error classes, choose the `cause` field 
 | `Schema.String`  | Message-only wrapping where structure is irrelevant            | `AuthError`                      |
 | Omitted          | When the error tag + fields fully describe the failure         | `UserNotFound`, `Unauthorized`   |
 
+<!-- typecheck -->
 ```typescript
 import * as Schema from 'effect/Schema';
 
@@ -453,6 +462,7 @@ export class AuthError extends Schema.TaggedError<AuthError>()(
 
 In `Effect.gen` blocks, tagged error instances can be yielded directly as a shorthand for `yield* Effect.fail(...)`. This works because `Schema.TaggedError`, `Schema.Error`, and `Data.TaggedError` all extend `Cause.YieldableError`.
 
+<!-- typecheck -->
 ```typescript
 import { Effect } from 'effect';
 import * as Schema from 'effect/Schema';
@@ -480,6 +490,7 @@ The shorthand form is idiomatic and preferred in Effect v4 generators. It reads 
 
 ### catchTag - Single Error Type
 
+<!-- typecheck -->
 ```typescript
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
@@ -523,6 +534,7 @@ const program = getUser('123').pipe(
 
 In Effect v4, `catchTag` accepts an array of tags to handle multiple error types with a single handler:
 
+<!-- typecheck -->
 ```typescript
 import { Effect, Schema } from 'effect';
 
@@ -554,6 +566,7 @@ const program = loadPort('80').pipe(
 
 In v4, `catchTag`, `catchTags`, and `catchIf` accept an optional trailing `orElse` parameter for unmatched errors:
 
+<!-- typecheck -->
 ```typescript
 import { Effect, Schema } from 'effect';
 
@@ -602,6 +615,7 @@ const program2 = riskyOp().pipe(
 
 ### catchTags - Multiple Error Types
 
+<!-- typecheck -->
 ```typescript
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
@@ -661,6 +675,7 @@ const program = fetchData().pipe(
 
 `Effect.catch` (renamed from `catchAll` in v3) handles all errors with a single handler:
 
+<!-- typecheck -->
 ```typescript
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
@@ -823,6 +838,7 @@ const program = callModel.pipe(
 
 `Effect.catchFilter` replaces v3's `Effect.catchSome` (which used `Option`). It uses the `Filter` module:
 
+<!-- typecheck -->
 ```typescript
 import { Effect, Filter } from 'effect';
 
@@ -846,6 +862,9 @@ const program = Effect.fail(42).pipe(
 
 In v4, `Cause<E>` is a flat wrapper around an array of reasons — **not** a recursive tree.
 
+Runtime JSON/inspection uses the `reasons` property in 4.0.6 (not `failures`).
+This display correction does not change schema-backed cause encodings.
+
 ```typescript
 interface Cause<E> {
 	readonly reasons: ReadonlyArray<Reason<E>>;
@@ -864,6 +883,7 @@ An empty cause is `cause.reasons.length === 0`. The `Empty`, `Sequential`, and `
 
 ### Inspecting Causes
 
+<!-- typecheck -->
 ```typescript
 import { Cause } from 'effect';
 
@@ -883,6 +903,7 @@ const inspectCause = <E>(cause: Cause.Cause<E>) => {
 
 ### Cause Extractors
 
+<!-- typecheck -->
 ```typescript
 import { Cause } from 'effect';
 import * as Option from 'effect/Option';
@@ -944,6 +965,7 @@ A `Fail` reason carrying `Done` can be combined with a real failure, for example
 
 Use Match for exhaustive error handling with compile-time guarantees:
 
+<!-- typecheck -->
 ```typescript
 import * as Effect from 'effect/Effect';
 import * as Match from 'effect/Match';
@@ -985,8 +1007,44 @@ const program = dangerousOperation().pipe(Effect.catch(handleError));
 
 ## Error Transformation
 
+### Mixed causes in effect@4.0.6
+
+Inspect exact release source with `git show effect@4.0.6:packages/effect/src/Effect.ts`
+and `internal/effect.ts`; the 4.0.6 rule supersedes earlier patch-release retry behavior.
+
+Typed recovery (`catch`, tag/reason/filter catches, fallbacks, `match`, `result`,
+`option`, `ignore`, and typed retry/repeat handling) gives defects precedence:
+
+- With any `Die` reason, skip typed recovery and convert **every** `Fail(e)` to
+  `Die(e)`, preserving reason order and all interrupts.
+- With a typed failure and interruption but **no defect**, recovery is allowed;
+  a successful handler can discard the interruption too.
+- Pure interruption has no typed error to recover and propagates.
+
+This is not a blanket guarantee that typed recovery preserves cancellation in
+mixed causes. At an explicit supervision boundary that must preserve every
+interrupt, inspect the cause and re-propagate it before typed recovery.
+
+<!-- typecheck -->
+```ts
+import { Cause, Effect } from 'effect';
+
+const mixed = Cause.combine(Cause.fail('expected'), Cause.die('bug'));
+const recovered = Effect.failCause(mixed).pipe(
+	Effect.catch(() => Effect.succeed('not reached'))
+);
+const exit = Effect.runSyncExit(recovered);
+// Failure cause contains Die('expected'), Die('bug'), in that order.
+```
+
 ### mapError - Transform Error Type
 
+`mapError` / `mapBoth` (including eager variants), `Exit.mapError`, and
+`Stream.mapError` map **every** typed error in place, preserving defects,
+interrupts, and reason order. Unlike recovery, mapping does not promote errors
+to defects when a defect is also present.
+
+<!-- typecheck -->
 ```typescript
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
@@ -1024,6 +1082,7 @@ const program = fetchFromDatabase().pipe(
 
 When writing reusable error-mapping combinators shared across multiple call sites, guard against double-wrapping:
 
+<!-- typecheck -->
 ```typescript
 import { Effect, Schema } from 'effect';
 
@@ -1057,7 +1116,8 @@ For per-item typed outcomes, `Effect.partition(items, work, { concurrency })`
 returns `[successes, failures]`, in that order. Both arrays preserve input order.
 `Effect.all(..., { mode: 'result' })` instead preserves the input structure with
 one `Result` per slot. Their `never` error channel means typed failures are
-collected; defects and interruption still propagate. Use `Effect.validate` when
+collected; mixed causes follow the rule above, while defects and pure interruption
+still propagate. Use `Effect.validate` when
 any item failure must fail the entire batch with all typed errors.
 
 Retry timing and recurrence design belong in the dedicated effect-scheduling skill. This skill determines which failures are typed and recoverable; scheduling determines whether, when, and how often an idempotent operation is retried.
@@ -1066,10 +1126,14 @@ Retry timing and recurrence design belong in the dedicated effect-scheduling ski
 
 Translate infrastructure errors into the service's public error vocabulary at the boundary that owns the abstraction, using `mapError`, `catchTag`, or `catchTags`. Preserve useful context in the translated error and avoid repeatedly wrapping an error already in the target vocabulary.
 
-Typed error combinators preserve defects and interruption. Keep that property: do not use blanket `catchCause`, `ignoreCause`, or cause-to-domain-error conversion in ordinary services, because they can turn cancellation into a recoverable failure. Cause-level recovery belongs only at an explicit supervision/runtime boundary; detect and re-propagate interruption rather than logging it as an operational error and continuing.
+Avoid blanket `catchCause`, `ignoreCause`, or cause-to-domain-error conversion in
+ordinary services. Cause-level recovery belongs at an explicit supervision/runtime
+boundary; detect and re-propagate interruption rather than logging it as an
+operational error and continuing. Typed recovery has the mixed-cause caveats above.
 
 ### Fallback with orElse
 
+<!-- typecheck -->
 ```typescript
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
@@ -1103,6 +1167,7 @@ const program = primaryService.pipe(Effect.catch(() => secondaryService));
 
 For policy selection, bounds, backoff, jitter, rate-limit delays, polling, and idempotency requirements, see the effect-scheduling skill.
 
+<!-- typecheck -->
 ```typescript
 import * as Effect from 'effect/Effect';
 import * as Schedule from 'effect/Schedule';
@@ -1135,6 +1200,7 @@ const program = unreliableOperation.pipe(
 
 ### Provide Default Value
 
+<!-- typecheck -->
 ```typescript
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
@@ -1162,6 +1228,7 @@ const program = fetchConfig.pipe(
 
 ### Convert Error to Option
 
+<!-- typecheck -->
 ```typescript
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
@@ -1191,6 +1258,7 @@ const program = findItem.pipe(Effect.option);
 
 ### Converting Errors to Defects
 
+<!-- typecheck -->
 ```typescript
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
@@ -1228,6 +1296,7 @@ const program2 = loadConfig.pipe(
 
 ### Handling Defects (Boundary Only)
 
+<!-- typecheck -->
 ```typescript
 import * as Effect from 'effect/Effect';
 
@@ -1250,6 +1319,7 @@ The `ErrorReporter` module is new in v4. It provides pluggable, structured error
 
 ### Defining a Reporter
 
+<!-- typecheck -->
 ```typescript
 import { ErrorReporter } from 'effect';
 
@@ -1280,6 +1350,7 @@ const defectsOnly = riskyOperation.pipe(
 
 Error objects can carry reporting annotations as string-keyed properties (the keys are namespaced strings such as `"~effect/ErrorReporter/severity"`):
 
+<!-- typecheck -->
 ```typescript
 import { ErrorReporter, Schema } from 'effect';
 
@@ -1308,6 +1379,7 @@ ErrorReporter.getAttributes(error); // read attributes
 
 Structure error handling in layers from specific to general:
 
+<!-- typecheck -->
 ```typescript
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
@@ -1431,6 +1503,7 @@ This replaces ad-hoc optional-field checking (`if (!body.access_token)`) with co
 
 ### Repository Errors
 
+<!-- typecheck -->
 ```typescript
 import * as Schema from 'effect/Schema';
 
@@ -1469,6 +1542,7 @@ export type RepositoryError = EntityNotFound | DuplicateEntity | QueryError;
 
 ### Service Errors
 
+<!-- typecheck -->
 ```typescript
 import * as Schema from 'effect/Schema';
 
@@ -1510,6 +1584,7 @@ export type ServiceError =
 
 ### Error Boundaries
 
+<!-- typecheck -->
 ```typescript
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';

@@ -5,6 +5,10 @@ description: Build typed event buses using Effect PubSub and Stream. Use this sk
 
 # PubSub Event Bus with Effect v4
 
+Baseline: **effect@4.0.6 stable**. Inspect `PubSub.ts`, `Stream.ts`, and their
+implementations with `git show effect@4.0.6:packages/effect/src/<Module>.ts`
+in the Effect reference repository, rather than reading newer main as the contract.
+
 ## Overview
 
 Effect's `PubSub` module provides a typed, composable publish/subscribe primitive. Combined with `Stream.fromPubSub` and `Effect.forkScoped`, it replaces imperative callback-based event buses with a fully typed, stream-based subscription model where cleanup is automatic.
@@ -26,6 +30,7 @@ import { Effect, PubSub, Stream } from 'effect';
 
 Define events as a discriminated union, then build a Bus service that publishes and subscribes using `PubSub`:
 
+<!-- typecheck -->
 ```typescript
 import { Effect, Layer, PubSub, Schema, Context, Stream } from 'effect';
 
@@ -143,6 +148,7 @@ const onFileChange = Effect.fn('Watcher.onFileChange')(function* (
 
 For high-throughput systems, maintain a `Map` of per-type PubSub channels to avoid filtering overhead on the wildcard channel:
 
+<!-- typecheck -->
 ```typescript
 import { Effect, PubSub, Stream } from 'effect';
 
@@ -231,6 +237,7 @@ not the graceful notification mechanism.
 
 For cross-process pub/sub, use the portable `Redis.Redis` service rather than modeling Redis as an in-memory `PubSub`. `redis.subscribe(channel)` is scoped and returns a dequeue whose values contain both `channel` and `message`.
 
+<!-- typecheck -->
 ```typescript
 import { Effect, Stream } from 'effect';
 import { Redis } from 'effect/persistence';
@@ -320,6 +327,16 @@ Choose based on your use case:
 - **`dropping`** — when burst absorption is needed but current events take priority
 
 **PubSub is not an event log.** Messages are delivered to *active* subscribers only. A subscriber that attaches after a value was published does not see that value unless a `replay` buffer is configured, and `replay` only retains the most recent N values — it is bounded, recent-only, and not durable storage. If you need every consumer to observe the full history, subscribe before publishing (see the testing choreography above) or persist events separately.
+
+Bounded/dropping/sliding capacities must be a **positive integer or `Infinity`**;
+zero, negative, fractional, and `NaN` capacities are rejected. Replay retention is
+independent of active subscribers draining their copies: late subscribers still
+receive the retained replay window.
+
+Reusing a `takeUpTo(sub, n)` effect applies the same limit on every execution; it
+does not consume a mutable remaining quota across runs. `takeBetween` can drain
+large backlogs without an argument-spread overflow, but still choose realistic
+limits for the consumer's memory budget.
 
 The final value passed to `PubSub.end` is the exception: every subscriber sees
 it even without replay. An `Infinity` capacity behaves as unbounded; use

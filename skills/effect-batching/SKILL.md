@@ -8,7 +8,8 @@ You are an Effect TypeScript expert specializing in request batching, deduplicat
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Browse and read files there directly to look up APIs, types, and implementations.
+Baseline: **effect@4.0.6 stable**. Read source with `git show effect@4.0.6:<path>`;
+the exact tag, not a newer main checkout, defines these contracts.
 
 Reference this for:
 
@@ -39,6 +40,7 @@ Selection guide:
 
 A `Request<Success, Error, Services>` describes a single lookup. Define requests using `Request.Class`:
 
+<!-- typecheck -->
 ```typescript
 import { Effect, Exit, Request, RequestResolver, Schema } from 'effect';
 
@@ -83,7 +85,10 @@ const req = GetUserById({ id: 42 });
 
 ### Request equality
 
-Requests use structural equality by default (via `Equal` trait). Two `GetUserById({ id: 1 })` instances are considered equal, enabling automatic deduplication within a batch window.
+Requests use structural equality by default (via `Equal`/`Hash`). Equal request
+values enable deduplication **when a cache is installed** (`withCache` or
+`asCache`). Batching alone collects distinct entries, including equal requests;
+it does not deduplicate them.
 
 ## RequestResolver
 
@@ -119,7 +124,10 @@ const resolver = RequestResolver.make<GetUserById>(
 
 ### Completing entries
 
-Every entry in the batch MUST be completed. Failing to do so causes a `QueryFailure` error at runtime.
+Every entry in the batch MUST be completed. An entry left incomplete when the
+resolver returns dies with an `Error` whose message is
+`Effect.request: RequestResolver did not complete request` and whose `cause` is
+the request. This is a defect, not a typed request error.
 
 ```typescript
 // Complete with success
@@ -150,7 +158,8 @@ const DoubleResolver = RequestResolver.fromFunctionBatched<GetDouble>(
 
 ### Per-request effectful resolver
 
-When each request needs its own effect (no batching optimization, but still benefits from deduplication):
+When each request needs its own effect (no backend batching; add a cache for
+deduplication):
 
 ```typescript
 const UserResolver = RequestResolver.fromEffect<GetUserById>((entry) =>
@@ -160,6 +169,10 @@ const UserResolver = RequestResolver.fromEffect<GetUserById>((entry) =>
 	})
 );
 ```
+
+`fromEffect` runs each entry under **that entry's captured caller context**.
+Services provided only around the resolver's `runAll` are not inherited by the
+entry effect; inner spans belong to the caller, not the surrounding resolver span.
 
 ### Tagged resolver (multiple request types)
 
@@ -179,6 +192,8 @@ const AppResolver = RequestResolver.fromEffectTagged<AppRequest>()({
 ### Grouped resolver
 
 Group requests by a key so each group is resolved separately:
+
+Group state lasts only while a batch is pending; later batches recreate it.
 
 ```typescript
 const resolver = RequestResolver.makeGrouped<GetUserByRole, string>({
@@ -219,7 +234,8 @@ When multiple `Effect.request` calls run concurrently, they are automatically ba
 
 ```typescript
 // These 5 lookups produce ONE call to the resolver
-// Duplicate IDs (1, 2) are deduplicated
+// Without a cache, the resolver receives all 5 entries (including duplicate IDs).
+// With withCache/asCache, equal pending requests share a result.
 const result =
 	yield*
 	Effect.forEach([1, 2, 1, 3, 2], (id) => getUserById(id), {
@@ -240,7 +256,10 @@ const resolver = RequestResolver.make<GetUserById>(/* ... */).pipe(
 );
 ```
 
-Default behavior (no `setDelay`): the resolver uses `Effect.yieldNow` which flushes after the current microtask, batching only requests that are already queued.
+Default behavior (no `setDelay`): the resolver uses `Effect.yieldNow` to collect
+queued callers before flushing; this is scheduler behavior, not a fixed
+microtask-duration guarantee. `setDelayEffect(Effect.void)` also supports a
+synchronous zero-delay flush, but may collect fewer callers.
 
 ### `RequestResolver.setDelayEffect`
 
@@ -292,6 +311,7 @@ Cache behavior:
 - Subsequent lookup for same request: served from cache immediately
 - When capacity is exceeded, oldest entries are evicted (LRU or FIFO)
 - In-flight deduplication: if the same request is pending, new callers attach to the pending result
+- On a miss, the wrapped resolver's `preCheck` still runs; cache wrapping does not bypass it
 
 ### `RequestResolver.asCache`
 
@@ -312,6 +332,16 @@ const userCache =
 const user = yield* Cache.get(userCache, new GetUserById({ id: 1 }));
 ```
 
+## Persistent Request Caching
+
+`RequestResolver.persisted` is `@stability unstable`. It requires persistable
+requests plus `Persistence.Persistence | Scope`. Undecodable stored entries are
+cache misses. Stale hits are delivered before background refresh tracking;
+refresh results, not the stale deliveries, are persisted. A whole-batch refresh
+failure replaces stale results with that failure. A refresh that completes no
+entries leaves their persisted expiry unchanged. Keep this lifetime and failure
+policy explicit rather than treating persistence as an infallible memory cache.
+
 ## Observability
 
 ### `RequestResolver.withSpan`
@@ -325,7 +355,7 @@ const resolver = pipe(
 );
 ```
 
-The span automatically includes a `batchSize` attribute and links to each request's parent span, giving full visibility into batching behavior in your tracing backend.
+The span automatically includes a `batchSize` attribute and links to each request's parent span, giving full visibility into batching behavior in your tracing backend. Dynamic span-option callbacks receive the batch entries; their full options are forwarded, not just attributes.
 
 Combine with `Effect.withSpan` on the individual request for end-to-end traces:
 
@@ -339,6 +369,12 @@ const getUserById = (id: number) =>
 ### Accessing request services
 
 Inside a resolver, each `Request.Entry` carries its captured `Context` with request-scoped services:
+
+`RequestResolver.make` runs a batch using the **first caller's context**. Different
+tenant, authorization, or backend services do not automatically split batches.
+Use separate resolver instances or `makeGrouped` with an explicit isolation key,
+and read `entry.context` when translating per-caller metadata. Never assume a
+shared batch sees each caller's services just because they appear in `R`.
 
 ```typescript
 import { Context, Tracer } from 'effect';
@@ -360,6 +396,7 @@ const resolver = RequestResolver.make<GetUserById>(
 
 The idiomatic pattern wraps request + resolver + caching inside a service layer:
 
+<!-- typecheck -->
 ```typescript
 import {
 	Effect,
@@ -383,6 +420,9 @@ class UserNotFound extends Schema.TaggedError<UserNotFound>()(
 		id: Schema.Number
 	}
 ) {}
+
+declare const fetchBatch: (ids: ReadonlyArray<number>) =>
+	Effect.Effect<ReadonlyArray<User>, UserNotFound>;
 
 class Users extends Context.Service<
 	Users,
@@ -524,6 +564,11 @@ const deleteUser = SqlResolver.request(DeleteUser);
 
 `SqlResolver` automatically groups requests by the transaction connection captured in each `Request.Entry.context`, so requests within a transaction are batched separately from those outside one. This depends on using the same `SqlClient` service instance that opened the transaction; requests executed with another client or a manually reserved connection do not join that transaction.
 
+Only the transaction connection separates SQL batches. Request encoding uses
+each entry's context, but `execute` and result decoding use the first entry's
+context. Isolate tenants/authorization with separate resolver instances, or put
+the required identity in the payload and enforce it explicitly in `execute`.
+
 Encoding failures are completed as their underlying schema errors before batch execution. If every request in a batch fails encoding, the non-empty execute callback is not invoked; duplicate `findById` requests are all completed rather than surfacing a resolver-incomplete defect.
 
 ## Resolver Combinators
@@ -567,7 +612,7 @@ const fast = RequestResolver.race(cacheResolver, dbResolver);
 ### WRONG: Completing only some entries
 
 ```typescript
-// BAD - entries without matches are never completed -> QueryFailure
+// BAD - entries without matches are never completed -> resolver-incomplete defect
 const resolver = RequestResolver.make<GetUserById>(
 	Effect.fn(function* (entries) {
 		for (const entry of entries) {

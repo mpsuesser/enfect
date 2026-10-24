@@ -7,6 +7,9 @@ You are an Effect TypeScript expert specializing in pull-based streaming with `S
 
 ## Effect Source Reference
 
+Baseline: **effect@4.0.6 stable**. Inspect the paths below with
+`git show effect@4.0.6:<path>`; main may contain later APIs.
+
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
 Browse and read files there directly to look up APIs, types, and implementations.
 
@@ -140,6 +143,11 @@ const clicks = Stream.fromEventListener<PointerEvent>(button, 'click');
 
 `Stream.callback` gives you a `Queue` to push values into. Use `Effect.acquireRelease` inside to register/unregister listeners with guaranteed cleanup.
 
+Registration runs before the first downstream pull, so callback sources can
+prepare immediately without waiting for demand. This does not remove the need
+for an explicit readiness handshake when another fiber must publish only after
+registration has finished.
+
 ```ts
 const callbackStream = Stream.callback<PointerEvent>(
 	Effect.fn(function* (queue) {
@@ -188,19 +196,35 @@ They preserve an existing closing cause; an open queue shuts down by interruptio
 
 ### From ReadableStream (DOM/Web)
 
+Reader locks are released on every exit. With `releaseLockOnEnd` enabled, the
+reader is released rather than canceled; otherwise rejected reader cancellation
+is surfaced as a defect, not silently ignored.
+
+<!-- typecheck -->
 ```ts
-const webStream = Stream.fromReadableStream({
-	evaluate: () => response.body!,
-	onError: (cause) => new MyError({ cause }),
-	releaseLockOnEnd: false // default: cancels reader; true releases lock instead
-});
+import { Stream } from 'effect';
+import * as Schema from 'effect/Schema';
+
+class ReadError extends Schema.TaggedError<ReadError>()('ReadError', {
+	cause: Schema.Unknown
+}) {}
+
+// Select this branch only after the boundary has established a body exists.
+const fromWebBody = (body: ReadableStream<Uint8Array>) =>
+	Stream.fromReadableStream({
+		evaluate: () => body,
+		onError: (cause) => new ReadError({ cause }),
+		releaseLockOnEnd: false // default; true releases lock instead of canceling
+	});
 ```
 
 ### From Node.js readable streams
 
+<!-- typecheck -->
 ```ts
 import { NodeStream } from '@effect/platform-node';
 import { Readable } from 'node:stream';
+import * as Schema from 'effect/Schema';
 
 class NodeErr extends Schema.TaggedError<NodeErr>()('NodeErr', {
 	cause: Schema.Defect()
@@ -295,6 +319,9 @@ Stream.make(1, 2, 3).pipe(
 );
 ```
 
+`scan` emits its seed even when the source is empty. The seed thunk runs once
+per stream execution, not once per emitted chunk.
+
 ### Grouping and batching
 
 ```ts
@@ -304,6 +331,13 @@ stream.pipe(Stream.grouped(100));
 // Group by size OR time window (whichever comes first)
 stream.pipe(Stream.groupedWithin(100, '1 second'));
 ```
+
+`groupedWithin` starts its duration when the group's first element arrives;
+an idle stream does not wake just to emit an empty group. `aggregateWithin`
+steps its schedule at most once per aggregation, with the previous output as
+input. Idle time between aggregations is hidden from the schedule; prefer
+`Schedule.spaced` for a flush timer. Schedule completion emits the current
+aggregation and sink leftovers, then stops without further upstream pulls.
 
 ### Rate control
 
@@ -539,6 +573,13 @@ stream.pipe(Stream.retry(Schedule.exponential('100 millis')));
 
 Schedules can be effectful and fail. `Stream.retry` includes the schedule's error in the resulting stream error channel; `Effect.schedule` and `Effect.scheduleFrom` likewise union schedule errors into their error channels. Recover or map that error explicitly rather than assuming only the repeated operation can fail. For sequential schedule composition, use `Schedule.concat` / `Schedule.concatResult`; the former `andThen` names were removed.
 
+`Stream.retry` resets its schedule after the first successfully emitted element.
+Retries use constant call stack even for synchronous failures. As with Effect
+typed recovery, a cause containing a defect bypasses retry/catches and promotes
+all typed errors to defects, preserving reason order and interrupts. Typed error
+plus interruption without a defect can recover/retry; pure interruption cannot.
+`Stream.mapError` instead maps every typed error in place without promotion.
+
 ### Execution-plan attempt events
 
 `Stream.withExecutionPlan` accepts an `onEvent` observer for attempt-level logs and metrics:
@@ -573,6 +614,10 @@ Prefer natural backpressure. Add `Stream.buffer` only to deliberately decouple p
 
 `Stream.partition` returns `[passes, fails]` and accepts `{ capacity }` (default
 16). Consume both sides concurrently to avoid blocking a full partition.
+
+Ending a partition or `groupBy` consumer early releases its queue rather than
+leaving producers blocked on a consumer that will never drain it. Active slow
+consumers can still exert backpressure.
 `Stream.mapBoth` takes `onElement` / `onError`. `catchTags` rejects unknown tag
 keys; `catchDefect` handles defects separately from typed failures/interruption.
 `tapDefect`, `tapErrorTag`, and `unwrapReason` provide targeted observation/recovery.
@@ -826,6 +871,34 @@ const monitored = Schedule.exponential('100 millis').pipe(
 ```
 
 ## Common Mistakes
+
+### Release-specific lifecycle edges
+
+- `switchMap` finalizes the replaced inner stream even if replacement happens
+  before that inner starts pulling.
+- Unordered `mapEffect` with `concurrency: Infinity` (or a limit larger than the
+  input) still awaits all results; it must not complete after an early subset.
+- Shaping `throttle` uses monotonic time and retains token debt across chunks;
+  wall-clock changes are not a reason to implement a second limiter.
+- `decodeText` flushes the decoder at end, including incomplete trailing input;
+  byte chunks need not align with characters.
+- `toReadableStreamWith(stream, context, { signal })` can interrupt production
+  even when the reader stops pulling. Abort closes the Web stream; demand gates
+  upstream pulls, not just enqueueing already-pulled chunks. Cancel/abort ownership
+  remains necessary when a consumer abandons the stream.
+
+<!-- typecheck -->
+```ts
+import { Context, Stream } from 'effect';
+
+const controller = new AbortController();
+const readable = Stream.toReadableStreamWith(
+	Stream.make(1, 2, 3),
+	Context.empty(),
+	{ signal: controller.signal }
+);
+controller.abort(); // stops production even without another reader pull
+```
 
 1. **Forgetting `runFold` initial is a thunk** — `Stream.runFold(() => 0, f)` not `Stream.runFold(0, f)`
 2. **Using `Stream.acquireRelease` when it doesn't exist** — use `Stream.scoped` + `Effect.acquireRelease` or `Stream.callback` with `Effect.acquireRelease` instead

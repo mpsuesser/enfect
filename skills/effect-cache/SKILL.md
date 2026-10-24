@@ -7,7 +7,10 @@ You are an Effect TypeScript expert specializing in in-memory caching with `Cach
 
 ## Effect Source Reference
 
-`Effect.cachedWithTTL` accepts either a fixed Duration input or an Exit-dependent
+Baseline: **effect@4.0.6 stable**. Read exact source with
+`git show effect@4.0.6:packages/effect/src/<Module>.ts`, not newer main.
+
+`Effect.cachedWithTTL` and `Effect.cachedInvalidateWithTTL` accept either a fixed Duration input or an Exit-dependent
 TTL function, so success and failure retention can differ. Allocate the cache
 once in its owning layer. A zero TTL is explicit, not omission.
 For `LayerMap.Service({ preload: true, ... })`, preserve acquisition errors on
@@ -284,6 +287,10 @@ const robust = yield* Cache.makeWith(fetchUser, {
 
 **Interruption is not cached.** Missing-key lookups run in daemon fibers, shared by their waiters. One caller's interruption leaves the lookup alive while another caller is waiting. When the last waiter leaves before completion, the lookup is interrupted and its entry removed; a later `get` starts again. `ScopedCache` also closes that lookup's entry scope. Children forked with `forkChild` inside the lookup end with the lookup fiber, not with the requesting caller; use the entry scope for resource-lifetime background work.
 
+Abandonment detaches the pending entry **before** interrupting and awaiting its
+cleanup. A new caller can start a fresh lookup while the abandoned lookup's
+finalizers are still running; do not assume those generations cannot overlap.
+
 `getSuccess`, `values`, and `entries` skip failed entries; `getOption` and `get` propagate the cached error; `invalidateWhen` returns `false` for failed entries (the predicate only sees successes).
 
 ---
@@ -353,6 +360,11 @@ A pending shared lookup also closes its entry scope when its last waiter leaves.
 Interrupting an existing-key `refresh` closes the replacement scope and leaves
 the previous entry intact.
 
+Expiry/capacity cleanup defects are logged at `References.UnhandledLogLevel`;
+they do not fail an unrelated read or prevent the replacement lookup. Explicit
+`invalidateAll` and owner shutdown attempt every entry's release and propagate
+all release defects rather than stopping at the first one.
+
 ```ts
 const tracker: Array<string> = [];
 const cache = yield* ScopedCache.make({
@@ -391,6 +403,11 @@ The full method surface (`get`, `getOption`, `getSuccess`, `set`, `has`, `invali
 the map is closed and never starts a lookup for a missing key. An existing
 in-flight entry is awaited; cached/in-flight failures still fail with `E`.
 This is not a non-blocking success-only peek and does not turn failures into absence.
+
+`RcMap` capacity is admission control, not LRU eviction: idle entries still count
+and a new key fails with `ExceededCapacityError` when full. An interrupted
+acquisition is dropped, so a later `get` starts fresh rather than replaying
+interruption. Owner shutdown attempts all releases and combines release defects.
 
 Use `LayerMap.contextEffectOption(key)` for the same behavior over keyed layer
 contexts. Its service-class accessor additionally requires the LayerMap service.
@@ -472,12 +489,33 @@ yield* cachedInv;
 yield* invalidate; // next run recomputes
 ```
 
+All three single-value helpers share in-flight work. One interrupted waiter does
+not cancel work needed by others; the last interrupted waiter abandons it. The
+abandoned generation is detached before cleanup, interrupted results are never
+retained, and Exit-dependent TTL callbacks are not called for interruption.
+
+<!-- typecheck -->
+```ts
+import { Duration, Effect, Exit } from 'effect';
+
+const program = Effect.gen(function* () {
+	const [read, invalidate] = yield* Effect.cachedInvalidateWithTTL(
+		Effect.succeed('configuration'),
+		(exit) => Exit.isSuccess(exit) ? Duration.minutes(5) : Duration.zero
+	);
+	const first = yield* read;
+	yield* invalidate;
+	return [first, yield* read];
+});
+```
+
 ---
 
 ## Key Patterns
 
 ### Cached repository service via Layer
 
+<!-- typecheck -->
 ```ts
 import { Cache, Context, Duration, Effect, Exit, Layer, Schema } from 'effect';
 

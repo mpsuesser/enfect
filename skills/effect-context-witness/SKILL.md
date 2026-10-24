@@ -7,6 +7,10 @@ description: Decide between Context.Service witness and capability patterns for 
 
 Choose between witness (existence) and capability (behavior) patterns for Context.Service definitions.
 
+Baseline: **effect@4.0.6 stable**. Inspect `Context.ts`, `Layer.ts`, and
+`Effect.ts` with `git show effect@4.0.6:packages/effect/src/<Module>.ts` in the
+Effect reference repository; a newer main checkout is not the release contract.
+
 ## Coupling: Hard vs Soft
 
 **Some coupling is necessary and good** - but move it from hard to soft coupling.
@@ -15,15 +19,16 @@ Choose between witness (existence) and capability (behavior) patterns for Contex
 
 Field exists in the schema - tightly coupled to domain model:
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
 // ❌ HARD COUPLING - Serial is part of the schema
-export const PaymentIntent = Schema.Struct({
+export class PaymentIntent extends Schema.Class<PaymentIntent>('PaymentIntent')({
 	id: Schema.String,
 	serial: Schema.String, // In schema = hard coupled
 	amount: Schema.BigInt
-});
+}) {}
 
 // Every PaymentIntent MUST have a serial
 // Serialization/validation requires serial
@@ -35,17 +40,18 @@ export const PaymentIntent = Schema.Struct({
 
 Field **removed from schema**, only injected in code:
 
+<!-- typecheck -->
 ```typescript
 import { Schema, Context, Effect } from 'effect';
 
-declare const generateId: () => string;
+declare const generateId: Effect.Effect<string>;
 
 // ✅ SOFT COUPLING - Serial not in schema
-export const PaymentIntent = Schema.Struct({
+export class PaymentIntent extends Schema.Class<PaymentIntent>('PaymentIntent')({
 	id: Schema.String,
 	amount: Schema.BigInt
 	// No serial field!
-});
+}) {}
 
 // Serial is a witness - required but injected via Context
 class Serial extends Context.Service<Serial, string>()('Serial') {}
@@ -58,7 +64,7 @@ const createPaymentIntent = (amount: bigint) =>
 		// but it's not part of the persisted data
 		yield* Effect.logInfo(`Creating payment intent ${serial}`);
 
-		return PaymentIntent.make({ id: generateId(), amount });
+		return new PaymentIntent({ id: yield* generateId, amount });
 	});
 
 // Type: Effect<PaymentIntent, never, Serial>
@@ -81,26 +87,31 @@ By removing the field from the schema and injecting it only where needed, you:
 - Transaction contexts (for coordination, not storage)
 - Tenant/Region markers (for routing, not schema)
 
+Context injection is not proof of authorization: only a trusted boundary should
+provide a verified witness. Keep durable tenant/owner identity in persisted
+domain values when isolation, audit, or replay requires it, and carry it explicitly
+across process/serialization boundaries. A context marker does not replace it.
+
 ## Witness: Existence Only
 
 Use when you only need to know something **exists** in the environment:
 
+<!-- typecheck -->
 ```typescript
 import { Schema, Context, Effect } from 'effect';
 
-declare const PaymentIntent: Schema.Struct<{
-	id: typeof Schema.String;
-	serial: typeof Schema.String;
-	amount: typeof Schema.BigInt;
-}>;
-declare const other: any;
+class PaymentIntent extends Schema.Class<PaymentIntent>('PaymentIntent')({
+	id: Schema.String,
+	serial: Schema.String,
+	amount: Schema.BigInt
+}) {}
 
 // Witness - a serial number exists
 export class Serial extends Context.Service<Serial, string>()('Serial') {}
 
 const createPaymentIntent = Effect.gen(function* () {
 	const serial = yield* Serial; // Pull from environment
-	return PaymentIntent.make({ serial, ...other });
+	return new PaymentIntent({ id: 'payment-1', serial, amount: 100n });
 });
 
 // Type: Effect<PaymentIntent, never, Serial>
@@ -110,29 +121,29 @@ const createPaymentIntent = Effect.gen(function* () {
 
 Use when you need **operations**:
 
+<!-- typecheck -->
 ```typescript
 import { Schema, Context, Effect } from 'effect';
 
-declare const PaymentIntent: Schema.Struct<{
-	id: typeof Schema.String;
-	serial: typeof Schema.String;
-	amount: typeof Schema.BigInt;
-}>;
-declare const other: any;
+class PaymentIntent extends Schema.Class<PaymentIntent>('PaymentIntent')({
+	id: Schema.String,
+	serial: Schema.String,
+	amount: Schema.BigInt
+}) {}
 
 // Capability - can generate/validate
 export class SerialService extends Context.Service<
 	SerialService,
 	{
-		readonly next: () => string;
+		readonly next: Effect.Effect<string>;
 		readonly validate: (s: string) => boolean;
 	}
 >()('SerialService') {}
 
 const createPaymentIntent = Effect.gen(function* () {
 	const svc = yield* SerialService;
-	const serial = svc.next(); // Behavior
-	return PaymentIntent.make({ serial, ...other });
+	const serial = yield* svc.next; // Effectful generation
+	return new PaymentIntent({ id: 'payment-1', serial, amount: 100n });
 });
 
 // Type: Effect<PaymentIntent, never, SerialService>
@@ -176,32 +187,34 @@ Good fits:
 
 Witnesses are trivial to provide:
 
+<!-- typecheck -->
 ```typescript
 import { Context, Effect } from 'effect';
 
 declare const myProgram: Effect.Effect<unknown, never, Serial>;
-declare class Serial extends Context.Service<Serial, string>()('Serial') {}
+class Serial extends Context.Service<Serial, string>()('Serial') {}
 
 const test = myProgram.pipe(Effect.provideService(Serial, 'test-serial-123'));
 ```
 
 Capabilities need implementation:
 
+<!-- typecheck -->
 ```typescript
 import { Context, Effect } from 'effect';
 
 declare const myProgram: Effect.Effect<unknown, never, SerialService>;
-declare class SerialService extends Context.Service<
+class SerialService extends Context.Service<
 	SerialService,
 	{
-		readonly next: () => string;
+		readonly next: Effect.Effect<string>;
 		readonly validate: (s: string) => boolean;
 	}
 >()('SerialService') {}
 
 const test = myProgram.pipe(
 	Effect.provideService(SerialService, {
-		next: () => 'test-serial-123',
+		next: Effect.succeed('test-serial-123'),
 		validate: () => true
 	})
 );
@@ -216,21 +229,27 @@ const test = myProgram.pipe(
 - **No** → Remove from schema, inject via witness
 - **Yes** → Keep in schema
 
+<!-- typecheck -->
 ```typescript
 import { Schema, Context, Effect, Clock } from 'effect';
+import * as Arr from 'effect/Array';
 
-declare const LineItem: Schema.Schema<any>;
-declare const generateId: () => string;
-declare const calculateTotal: (items: Array<any>) => bigint;
+class LineItem extends Schema.Class<LineItem>('LineItem')({
+	price: Schema.BigInt,
+	quantity: Schema.Int
+}) {}
+declare const generateId: Effect.Effect<string>;
+const calculateTotal = (items: ReadonlyArray<LineItem>) =>
+	Arr.reduce(items, 0n, (total, item) => total + item.price * BigInt(item.quantity));
 
 // ✅ Domain model - only persisted data
-export const Order = Schema.Struct({
+export class Order extends Schema.Class<Order>('Order')({
 	id: Schema.String,
 	items: Schema.Array(LineItem),
 	total: Schema.BigInt
 	// No correlationId - not persisted!
-	// No timestamp - derived from system!
-});
+	// Persist a creation timestamp here too if audit/replay needs it.
+}) {}
 
 // Witnesses for runtime context
 class CorrelationId extends Context.Service<CorrelationId, string>()(
@@ -239,26 +258,25 @@ class CorrelationId extends Context.Service<CorrelationId, string>()(
 class RequestId extends Context.Service<RequestId, string>()('RequestId') {}
 
 // Use in code, not in data
-const createOrder = (items: Array<Schema.Schema.Type<typeof LineItem>>) =>
-	Effect.gen(function* () {
-		const correlationId = yield* CorrelationId; // For tracing
-		const requestId = yield* RequestId; // For logging
-		const timestamp = yield* Clock.currentTimeMillis; // For timestamp
+const createOrder = Effect.fn('Order.create')(function* (items: ReadonlyArray<LineItem>) {
+	const correlationId = yield* CorrelationId; // For tracing
+	const requestId = yield* RequestId; // For logging
+	const timestamp = yield* Clock.currentTimeMillis; // For timestamp
 
-		yield* Effect.logInfo({
-			message: 'Creating order',
-			correlationId, // Used for tracing
-			requestId, // Used for logging
-			timestamp
-		});
-
-		// Data only contains what's persisted
-		return Order.make({
-			id: generateId(),
-			items,
-			total: calculateTotal(items)
-		});
+	yield* Effect.logInfo({
+		message: 'Creating order',
+		correlationId, // Used for tracing
+		requestId, // Used for logging
+		timestamp
 	});
+
+	// Data only contains what's persisted
+	return new Order({
+		id: yield* generateId,
+		items,
+		total: calculateTotal(items)
+	});
+});
 
 // Type: Effect<Order, never, CorrelationId | RequestId>
 ```

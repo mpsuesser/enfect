@@ -7,6 +7,9 @@ You are an Effect TypeScript expert specializing in resource lifecycle managemen
 
 ## Effect Source Reference
 
+Baseline: **effect@4.0.6 stable**. Inspect `git show effect@4.0.6:<path>`;
+main may describe later contracts.
+
 The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read it directly when in doubt — v4 differs substantially from v3 and from most training data.
 
 Key files:
@@ -306,6 +309,11 @@ Close semantics (from `internal/effect.ts` `scopeCloseFinalizers`):
 - Finalizers run in **reverse registration order** (LIFO).
 - `'sequential'` (default): one at a time, each awaited. `'parallel'`: all started concurrently, then awaited together.
 - `Scope.close` runs finalizers uninterruptibly by default: interruption of the closing fiber waits for cleanup. A finalizer can explicitly restore interruptibility; avoid doing so unless abandoning that cleanup is intentional.
+- `Scope.State.Closed` means closing has **started**, not that cleanup has finished.
+  A second/concurrent `Scope.close` returns immediately while the first close may
+  still be running finalizers. Await the original close or coordinate a separate
+  completion signal; unlike external `ManagedRuntime.dispose` calls, repeated
+  scope closes do not join ongoing cleanup.
 - **Every finalizer always runs** — a failing finalizer does not prevent the others. All failures are collected and combined into a single `Cause`; `Scope.close` then fails with that combined cause.
 - When scoped work and scope finalization both fail, the work cause and combined finalizer cause are merged.
 - Closing an already-closed scope is a no-op.
@@ -414,7 +422,7 @@ Key facts (verified in `Layer.ts`):
 - **v3 `Layer.scoped` and `Layer.scopedDiscard` are gone.** `Layer.effect` / `Layer.effectDiscard` already do `Exclude<R, Scope.Scope>` — there is nothing extra to call.
 - `Layer.effect` is callable both ways: `Layer.effect(Tag, effect)` or curried `Layer.effect(Tag)(effect)`.
 - `Layer.effectDiscard(effect)` runs construction side effects in the layer scope, providing no service — the canonical home for background tasks (see section 7).
-- **Memoized layers refcount their scope.** Each layer builds once per `MemoMap` in its own scope; every consumer's scope registers a finalizer that decrements an observer count, and the layer's finalizers run only when the **last** consumer's scope closes. In v4 the `MemoMap` is shared across `Effect.provide` calls.
+- **Memoized layers refcount their scope.** Each layer builds once per `MemoMap` in its own scope; every consumer's scope registers a finalizer that decrements an observer count, and the layer's finalizers run only when the **last** consumer's scope closes. Nested provides can reuse an enclosing provide/runtime allocation; sibling `Effect.provide` calls build their own copies. Reused `provide`/`provideMerge`/`mergeAll` layer compositions are themselves memoized, including inner fresh dependencies; freshen the whole composition for isolation.
 - `Layer.build(layer)` returns `Effect<Context<ROut>, E, RIn | Scope.Scope>` — the resources bind to the ambient scope. `Layer.buildWithScope(layer, scope)` uses an explicit one. `Layer.launch(layer)` builds the layer and sleeps forever inside `Effect.scoped` — for apps that *are* a layer.
 
 Layer composition, `Layer.fresh`, and `provide` semantics are covered by the `effect-layer-design` skill; `ManagedRuntime` scope handling by the `effect-managed-runtime` skill.
@@ -532,6 +540,11 @@ used outside that effect. Put the use inside the scope or use `Pool.use`.
 `Pool.State` / `Pool.PoolItem` use incremental usage and intrusive
 FIFO tracking; use the public checkout/invalidation APIs rather than their fields.
 
+`Pool.makeWithTTL` defaults to `timeToLiveStrategy: 'usage'`: only idle,
+unreserved excess items expire, measured from the last borrower's release (or
+acquisition if never borrowed). Checks run once per TTL, so retirement can take
+up to twice the configured duration. `'creation'` instead measures item age.
+
 ---
 
 ## 9. Scope-Aware Utilities
@@ -564,6 +577,7 @@ In tests, `it.effect` from `@effect/vitest` wraps every test body in `Effect.sco
 
 ### File handle, bounded lifetime
 
+<!-- typecheck -->
 ```ts
 import { Effect, FileSystem } from 'effect';
 import { NodeFileSystem } from '@effect/platform-node';

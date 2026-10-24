@@ -10,7 +10,8 @@ Create layers that construct services while managing their dependencies cleanly.
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Browse and read files there directly to look up APIs, types, and implementations.
+Baseline: **effect@4.0.6 stable**. Use `git show effect@4.0.6:<path>`;
+exact-tag source takes precedence over a newer main checkout.
 
 Reference this for:
 
@@ -46,6 +47,7 @@ Default production services with dependencies or resources to `Layer.effect`. Us
 
 ## Pattern: Simple Layer (No Dependencies)
 
+<!-- typecheck -->
 ```typescript
 import { Context, Effect, Layer } from 'effect';
 
@@ -79,6 +81,7 @@ export const ConfigLive = Layer.succeed(
 
 ## Pattern: Layer with Dependencies
 
+<!-- typecheck -->
 ```typescript
 import { Context, Effect, Layer, Console } from 'effect';
 
@@ -127,6 +130,7 @@ Use `Layer.effect` for effectfully acquired services, including resources that n
 
 Resources are acquired and released using `Effect.acquireRelease` or `Effect.addFinalizer` inside the `Layer.effect` constructor:
 
+<!-- typecheck -->
 ```typescript
 import { Context, Effect, Layer } from 'effect';
 
@@ -215,6 +219,7 @@ Start from the service graph, not from whichever combinator makes the types comp
 
 Merge layers when both outputs should remain exposed. This does not wire one output into another layer's requirements:
 
+<!-- typecheck -->
 ```typescript
 import { Context, Layer } from 'effect';
 
@@ -241,6 +246,7 @@ Result combines:
 
 Chain dependent layers:
 
+<!-- typecheck -->
 ```typescript
 import { Context, Layer } from 'effect';
 
@@ -322,6 +328,7 @@ If none of those apply, compose directly.
 
 Build applications in layers:
 
+<!-- typecheck -->
 ```typescript
 import { Context, Layer } from 'effect';
 
@@ -435,8 +442,10 @@ const program = Effect.gen(function* () {
 
 ## Pattern: Layer Sharing
 
-Layers are memoized - same instance shared across program:
+Layers share by layer-object identity within a `MemoMap`, not globally across
+all executions or all `Effect.provide` calls:
 
+<!-- typecheck -->
 ```typescript
 import { Context, Effect, Layer } from 'effect';
 
@@ -461,6 +470,33 @@ const program = Effect.all([
 
 > **Memo-map fork nuance:** Sharing is mediated by a `MemoMap`. A root memo map (`Layer.makeMemoMapUnsafe()`, used implicitly by `Effect.provide`) shares every layer allocation it builds. A _forked_ memo map (`Layer.forkMemoMap` / `Layer.forkMemoMapUnsafe`) can still see allocations its parent already built, but new allocations it builds stay isolated and are not written back to the parent. This is the mechanism `@effect/vitest` uses to reuse parent layers while isolating nested `it.layer` suites.
 
+An enclosing provide/runtime allocation is reused by nested provides; sibling
+`Effect.provide` calls build separate copies. Use `{ local: true }` to isolate
+the provided subtree explicitly.
+
+In 4.0.6, `Layer.provide`, `provideMerge`, and `mergeAll` also memoize the **whole
+composition**. Reusing that composed layer shares its build even when an inner
+dependency uses `Layer.fresh`. For independent copies, apply `Layer.fresh` to the
+entire composition. The first requester owns a shared in-progress build;
+interrupting it affects other callers waiting for that build.
+
+`Layer.buildWithMemoMap` defers construction until each execution, so retrying
+the returned effect does not eagerly reuse an already-created build operation.
+
+<!-- typecheck -->
+```ts
+import { Context, Effect, Layer } from 'effect';
+
+class Config extends Context.Service<Config, { readonly port: number }>()('demo/Config') {}
+class Server extends Context.Service<Server, { readonly port: number }>()('demo/Server') {}
+
+const config = Layer.sync(Config, () => ({ port: 8080 }));
+const server = Layer.effect(Server, Config.use((value) => Effect.succeed(value)));
+const composed = server.pipe(Layer.provide(Layer.fresh(config)));
+const shared = Layer.mergeAll(composed, composed);
+const isolated = Layer.mergeAll(Layer.fresh(composed), Layer.fresh(composed));
+```
+
 ## Error Handling in Layers
 
 `Layer.tapError` and `Layer.tapCause` observers must accept the complete source
@@ -477,6 +513,7 @@ remain retained only for that idle TTL, not forever.
 
 Handle construction errors:
 
+<!-- typecheck -->
 ```typescript
 import { Context, Effect, Layer, Schema } from 'effect';
 

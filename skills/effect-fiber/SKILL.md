@@ -7,6 +7,9 @@ You are an Effect TypeScript expert specializing in fiber lifecycle, interruptio
 
 ## Effect Source Reference
 
+Baseline: **effect@4.0.6 stable**. Resolve source paths with
+`git show effect@4.0.6:<path>` rather than relying on a newer main checkout.
+
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
 Browse and read files there directly to look up APIs, types, and implementations.
 
@@ -295,6 +298,12 @@ const onFail = Effect.onError(task, (cause) => Effect.log(Cause.squash(cause)));
 
 Bridging interruption to `AbortSignal`-aware APIs:
 
+For `Effect.promise` / `tryPromise`, declare `(signal) => ...` with an ordinary
+parameter when the external operation needs cancellation. Signal creation uses
+function arity (at least one parameter); default/rest parameters do not count.
+`Effect.callback` similarly needs `(resume, signal) => ...` (arity at least two).
+An externally abortable API still needs the supplied signal passed to it.
+
 ```ts
 const download = Effect.scoped(
 	Effect.gen(function* () {
@@ -350,13 +359,21 @@ Whichever lifetime you pick, **a forked fiber's failure is observed by nobody un
 
 `forkIn`/`forkScoped` register an interruption finalizer on the scope and remove it when the fiber completes on its own. Forking into an already-closed scope interrupts the new fiber immediately. The same applies to `Fiber.runIn(fiber, scope)`, which only registers the finalizer — it does not wait for the fiber.
 
+A fiber may close the same scope it is registered in without a self-interruption
+deadlock (`forkIn` and `Fiber.runIn`); scope-bound lifetime does not require a
+custom self-cancellation workaround.
+
 Scope mechanics themselves — `Effect.scoped`, manual `Scope.make`/`close`, finalizer ordering — are covered by the effect-scope skill.
 
 ---
 
 ## 6. FiberHandle — Single-Slot Supervision
 
-`FiberHandle<A, E>` manages **at most one fiber**. Running a new effect into it interrupts the previous fiber (latest wins); closing the owning scope interrupts the current fiber; completed fibers remove themselves.
+`FiberHandle<A, E>` has **at most one current fiber slot**. Replacement signals
+interruption without waiting for the old fiber's finalizers, so the old and new
+executions may overlap during cleanup. The owner retains replaced fibers that
+are still finalizing, and scope shutdown waits for them too. Completed current
+fibers remove themselves. This is latest-wins ownership, not a serial mutex.
 
 ```ts
 const program = Effect.gen(function* () {
@@ -433,6 +450,9 @@ After the scope closes: `FiberHandle.run` **interrupts the calling fiber**; the 
 ## 7. FiberMap — Keyed Fibers
 
 `FiberMap<K, A, E>` is a map of running fibers indexed by key. Running a new effect under an existing key interrupts the previous fiber for that key; entries remove themselves on completion; scope close interrupts everything.
+
+As with `FiberHandle`, replacement is non-blocking but replaced fibers remain
+owned until finalization completes; scope shutdown waits for those fibers too.
 
 ```ts
 const program = Effect.gen(function* () {

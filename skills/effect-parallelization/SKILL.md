@@ -7,6 +7,9 @@ You are an Effect TypeScript expert specializing in declarative concurrency — 
 
 ## Effect Source Reference
 
+Baseline: **effect@4.0.6 stable**. Inspect paths with
+`git show effect@4.0.6:<path>`; newer main is not the release contract.
+
 The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read it directly when in doubt — Effect v4 differs substantially from v3 and from most training data.
 
 Key files:
@@ -43,7 +46,7 @@ The two central signatures:
 Effect.all(arg, options?: {
 	concurrency?: Concurrency;
 	discard?: boolean;          // true => Effect<void>
-	mode?: 'default' | 'result'; // 'result' => never fails, each slot is a Result<A, E>
+	mode?: 'default' | 'result'; // 'result' => typed E is never, each slot is a Result<A, E>
 });
 
 // Apply an effectful function over an Iterable
@@ -122,7 +125,11 @@ yield* Effect.all([logA, logB, logC], { concurrency: 'unbounded', discard: true 
 
 ### `mode: 'result'` — collect typed outcomes
 
-Each slot becomes a `Result<A, E>` and the error channel becomes `never`. Typed failures do not short-circuit the batch; defects and interruption still terminate it:
+Each slot becomes a `Result<A, E>` and the error channel becomes `never`. Typed
+failures do not short-circuit the batch. A cause containing a defect propagates
+with every typed failure promoted to a defect, preserving order and interrupts.
+Pure interruption still terminates it, but a typed failure plus interruption
+without a defect can be collected as a `Result`, discarding that interruption:
 
 ```ts
 const results = yield* Effect.all(
@@ -303,7 +310,9 @@ const strong = yield* Effect.filterMapEffect(
 
 ### `Effect.partition` — collect successes and typed failures
 
-Typed failures do not short-circuit. Returns `[passes, fails]` — **successes first**. Both arrays preserve input order; defects and interruption still propagate:
+Typed failures do not short-circuit. Returns `[passes, fails]` — **successes first**.
+Both arrays preserve input order. Defects and pure interruption propagate;
+typed-error-plus-interruption causes follow the `mode: 'result'` rule above:
 
 ```ts
 const [users, failures] = yield* Effect.partition(
