@@ -9,6 +9,7 @@ const INFRASTRUCTURE_TESTS = new Set([
   "claude-plugin.test.ts",
   "comment-string-false-positives.test.ts",
   "documentation-types.test.ts",
+  "effect-release.test.ts",
   "pattern-enforcement.test.ts",
   "readme-inventory.test.ts",
   "skills-runtime.test.ts",
