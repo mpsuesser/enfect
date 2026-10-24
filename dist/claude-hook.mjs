@@ -8680,16 +8680,6 @@ var require_picomatch2 = __commonJS(function(exports, module) {
   module.exports = picomatch;
 });
 
-// src/claude/hook.ts
-import { existsSync } from "node:fs";
-import { homedir } from "node:os";
-import path6 from "node:path";
-import { fileURLToPath } from "node:url";
-
-// src/core/pattern-catalog.ts
-import { readdir, readFile, stat } from "node:fs/promises";
-import path from "node:path";
-
 // node_modules/yaml/dist/index.js
 var exports_dist = {};
 __exportCjs(exports_dist, {
@@ -8753,6 +8743,18 @@ __exportCjs(exports_dist, {
   visit: (value) => $visit = value,
   visitAsync: (value) => $visitAsync = value
 });
+
+// src/claude/hook.ts
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import path6 from "node:path";
+import { fileURLToPath } from "node:url";
+
+// src/core/pattern-catalog.ts
+import { readdir, readFile, stat } from "node:fs/promises";
+import path from "node:path";
+
+// node_modules/yaml/dist/index.js
 var composer = require_composer();
 var Document = require_Document();
 var Schema = require_Schema();
@@ -9078,7 +9080,7 @@ var package_default = {
     typescript: "^5.9.2",
     vitest: "^3.2.4"
   },
-  packageManager: "bun@1.3.14"
+  packageManager: "bun@1.4.4"
 };
 
 // src/core/ast-grep.ts
