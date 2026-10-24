@@ -21,7 +21,7 @@ suggestSkills:
 ```haskell
 -- Transformation
 catch :: (E -> Effect a) -> Effect a E -> Effect a _
-catch _ default = \_ -> succeed default    -- swallows all errors silently
+catch _ default = \_ -> succeed default    -- hides all recoverable typed failures
 
 -- Instead
 catchTag  :: Tag -> (E -> Effect a) -> Effect a E -> Effect a (E - Tag)
@@ -51,6 +51,8 @@ better = pipe
 ```
 
 `Effect.catch` with defaults often hides bugs and loses context. Use `catchTag` for specific errors with logging, or `Option` for expected absence.
+
+Typed recovery does not swallow defects. If a cause contains any defect, the handler is skipped and typed errors become defects, preserving reason order and interruptions. A typed error alongside interruption can still be recovered; interruption-only causes propagate. Use cause-level handling only when the boundary deliberately owns that broader contract.
 
 Legitimate exceptions exist at explicit boundaries:
 

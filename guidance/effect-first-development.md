@@ -2,9 +2,9 @@
 
 This document defines the working model behind Effect-first code using the Effect v4 ecosystem.
 
-Bundled baseline: **Effect 4.0.0 (stable)**. Check the consuming project's installed
+Bundled baseline: **Effect 4.0.6 (stable)**. Check the consuming project's installed
 version and inspect the matching upstream release tag before using newer APIs.
-The release changelog and migration audit are in `docs/effect-4.0.0.md`.
+The release changelog and migration audit are in `docs/effect-4.0.6.md`.
 Source paths below are relative to the Effect source reference; locate symbols
 by name rather than relying on line numbers or a particular tool name.
 
@@ -141,7 +141,8 @@ export const decodeCreateTaskInput =
     - `import * as Eq from "effect/Equal"`
     - `import * as Bool from "effect/Boolean"`
 - Reserve root imports from `"effect"` for core combinators/types such as `Effect`, `Match`, `pipe`, and `flow`.
-- Import area modules from `effect/<area>` (for example `effect/http-api` and `effect/ai`). Keep APIs marked `@stability unstable` deliberate and local; they may break in minor releases. Use the same release version for `effect` and all directly used `@effect/*` packages.
+- Import area modules from `effect/<area>` (for example `effect/http-api` and `effect/ai`). Check explicit stability annotations: stable APIs reserve breaking changes for major releases, unstable APIs may change in minor releases, and experimental APIs may change in patch releases. Keep non-stable usage deliberate and local. Use the same release version for `effect` and all directly used `@effect/*` packages.
+- Do not import `@internal` symbols or bypass blocked package paths (`effect/internal/*`, area-internal paths, `effect/index`, or `effect/<area>/index`). A wildcard export is not permission to use internal implementation details.
 
 ### EF-5: Effect modules over native collection helpers
 
@@ -245,6 +246,7 @@ export * as MyServiceModule from './my-service.js';
 
 - Do not use native `fetch` in runtime source.
 - Compose requests/responses with `HttpClientRequest`, `HttpClientResponse`, `Headers`, `UrlParams`, `HttpMethod`, and `HttpBody`.
+- Transport success does not imply HTTP status success. Classify status before decoding a success body; use `HttpClient.filterStatusOk` or `HttpClientResponse.filterStatusOk` for a 2xx-only contract.
 - Provide runtime client layers explicitly (`BunHttpClient.layer` from `@effect/platform-bun` for Bun runtimes).
 - Native `fetch` is reserved for explicit low-level platform implementations that cannot use Effect HTTP. Isolate it in an adapter, lift it with `Effect.tryPromise`, propagate the supplied `AbortSignal`, classify status before decoding, and decode unknown bodies with `Schema`.
 
@@ -524,6 +526,8 @@ export const runJob = Effect.fn('Job.run')(function* (id: string) {
 - Use `Effect.tryPromise` for Promise APIs that may reject.
 - Keep Promise rejection details in typed failure values.
 - Domain APIs should return `Effect`, not raw `Promise`.
+- When forwarding cancellation, declare an ordinary first parameter: `(signal) => ...`. `Effect.promise` and `Effect.tryPromise` inspect callback `.length`; rest-parameter or default-first-parameter wrappers receive `undefined`, not an `AbortSignal`. A zero-argument thunk intentionally avoids allocating an `AbortController`.
+- For `Effect.callback`, declare both ordinary parameters `(resume, signal) => ...` when using cancellation; signal allocation requires registration `.length >= 2`. Passing a signal only cancels underlying work if that API observes it.
 
 Example:
 
@@ -595,8 +599,10 @@ const lookupCachedOnTimeout = slowLookup.pipe(
 
 ### EF-26: Structured concurrency is the default
 
-- Prefer `Effect.forkChild` so lifecycle is supervised by parent scope.
+- Prefer `Effect.forkChild` so lifecycle is tied to the parent fiber.
+- A child is interrupted when its parent fiber completes; use `forkScoped` / `forkIn` when the work belongs to a longer-lived scope.
 - Use `Effect.forkDetach` only for explicit daemon semantics.
+- Detached fibers have no automatic parent or scope cleanup; arrange shutdown and failure observation explicitly.
 - Make fork intent explicit in code review and comments for detached work.
 - Reference: `forkChild` and `forkDetach` in `packages/effect/src/Effect.ts`.
 
@@ -671,6 +677,9 @@ const loadApiKey = Effect.fn('Config.loadApiKey')(function* () {
 - Prefer `Effect.catchTag` and `Effect.catchFilter` for targeted recovery.
 - Do not hide unrelated failures behind broad fallback handlers.
 - Keep recoverable error cases explicit in code.
+- Typed recovery (`catch`, `catchTag`, `catchFilter`, matching, retry, and ignore) gives defects precedence: if any cause reason is a defect, handlers are skipped and typed errors are converted to defects while preserving reason order and interruptions. An interruption alongside a typed error does not itself block typed recovery; interruption-only causes propagate.
+- `Effect.result` / `Effect.option` follow the same defect precedence. Without a defect they capture the first typed error (or return `None`) even alongside interruption, discarding that interruption. Use `Effect.exit` when the whole cause matters.
+- `Effect.mapError` / `Effect.mapBoth` instead map every typed error while preserving defects, interruptions, and reason order; they do not elect typed errors to defects.
 
 Example:
 
@@ -719,7 +728,7 @@ const validateInput = Effect.fn('Input.validate')(function* (value: string) {
 
 ### EF-32: Layer memoization isolation must be intentional
 
-- Understand that layer provisioning is shared by default.
+- A layer already built by an enclosing `Effect.provide` or runtime is reused. Sibling `provide` calls build their own copies; sharing is not global.
 - When isolation is required, use `Effect.provide(..., { local: true })` or `Layer.fresh`.
 - Document why isolation is necessary for behavior-sensitive paths.
 - Compose `defaultLayer` values directly by default.
@@ -953,10 +962,11 @@ const UnknownToString = Schema.Unknown.pipe(
 
 ### EF-40: Use Effect.cached for memoization and deduplication
 
-- Replace ad-hoc memoization (Promise-based `task` fields, `Fiber` tracking, mutable `result` caches) with `Effect.cached`.
-- `Effect.cached(effect)` returns an Effect that runs `effect` at most once, sharing the result with all subsequent callers.
-- For invalidatable caches, use `Effect.cachedInvalidateWithTTL(effect, Duration.infinity)` which returns a `[cachedEffect, invalidate]` tuple. Call `yield* invalidate` to force re-computation on next access.
+- Replace ad-hoc result memoization and in-flight deduplication with `Effect.cached`; it is not a replacement for a job coordinator or scoped resource ownership.
+- `Effect.cached(effect)` shares a pending computation and caches its completed success or failure. If every waiting caller leaves before completion, the unfinished run is interrupted. Interrupted computations are never cached; a later caller starts a fresh run.
+- For invalidatable caches, use `Effect.cachedInvalidateWithTTL(effect, Duration.infinity)` which returns a `[cachedEffect, invalidate]` tuple. `yield* invalidate` detaches the current run without interrupting its existing waiters; new callers start a fresh run, and an old run cannot overwrite its replacement.
 - For time-based caches, use `Effect.cachedWithTTL(effect, duration)`.
+- TTL starts at completion. Exit-dependent TTL callbacks run when the current run publishes a fresh success or failure, but never for interruptions, cache hits, or detached runs invalidated before completion.
 - Prefer `Effect.cachedInvalidateWithTTL` with `Duration.infinity` over mutable `let` rebinding of cached effects.
 - For keyed scoped resources, use `RcMap.getOption` and `LayerMap.contextEffectOption` to atomically retain already-cached entries and propagate acquisition failures; `None` means missing/closed, not failed. A `has` check followed by `get` is not equivalent.
 
@@ -969,10 +979,10 @@ import { Duration, Effect } from 'effect';
 const cachedConfig = yield* Effect.cached(loadConfig());
 
 // Manually invalidatable cache
-const [cachedConfig, invalidate] =
+const [reloadableConfig, invalidate] =
 	yield*
 	Effect.cachedInvalidateWithTTL(
-		loadConfig().pipe(Effect.orElseSucceed(() => defaultConfig)),
+		loadConfig(),
 		Duration.infinity
 	);
 // Later: yield* invalidate to force reload on next access

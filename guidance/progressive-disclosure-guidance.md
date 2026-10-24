@@ -1,6 +1,6 @@
 # Agent Rules
 
-The bundled guidance targets **Effect 4.0.0 (stable)**. Read the consuming project's
+The bundled guidance targets **Effect 4.0.6 (stable)**. Read the consuming project's
 version before applying an API: v3, v4 prereleases, and unreleased main can have
 different contracts. Use the same version of `effect` and every directly used
 `@effect/*` package; Effect packages are versioned and released together.
@@ -9,9 +9,10 @@ Import area modules from `effect/<area>`: for example `effect/http`,
 `effect/http-api`, `effect/rpc`, `effect/ai`, and `effect/process`. Import
 `Arbitrary` from `effect/Arbitrary`, and binary-text codecs from
 `effect/encoding/{Base64,Base64Url,Hex,EncodingError}`. Check source stability
-annotations: `@stability unstable` APIs can break in minor releases even though
-their import paths have no `unstable` segment. APIs without that annotation
-follow semver. TypeScript 5.9 or newer is required.
+annotations: stable APIs reserve breaking changes for major releases, unstable
+APIs may change in minor releases, and experimental APIs may change in patch
+releases. An import path without `unstable` does not imply stability; inspect the
+API's explicit `@stability` annotation. TypeScript 5.9 or newer is required.
 
 Before planning or writing Effect code, load the skills relevant to the APIs involved.
 For other tasks, load a skill only when its guidance is needed to answer or complete the task.
@@ -19,10 +20,13 @@ For other tasks, load a skill only when its guidance is needed to answer or comp
 When skills leave any ambiguity, or when you encounter unfamiliar APIs during implementation, read the OpenCode `effect` reference at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Treat this reference as the source of truth over `node_modules`, stale external docs, or memory.
 
 Check the reference revision too. For this baseline, inspect the
-`effect@4.0.0` tag (for example with `git show
-effect@4.0.0:packages/effect/src/Schema.ts`) when main has moved ahead.
+`effect@4.0.6` tag (for example with `git show
+effect@4.0.6:packages/effect/src/Schema.ts`) when main has moved ahead.
 Source symbols and signatures at that tag take precedence over stale prose or
 line-number links. Public exports marked `@internal` in source are not application APIs.
+Do not bypass package exports: `effect/internal/*`, blocked area-internal paths,
+`effect/index`, and `effect/<area>/index` are not supported imports. Use the public
+area entrypoints instead. The release audit is in `docs/effect-4.0.6.md`.
 
 ## Start here
 

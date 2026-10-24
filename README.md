@@ -29,9 +29,11 @@ Checks run after successful file writes, edits, and patches. Edits and patches a
 files are checked in full. Feedback asks the agent to fix valid findings or
 explain intentional exceptions. Checks are advisory and do not block writes.
 
-The bundled guidance and skills target **Effect `4.0.0` (stable)**.
-See the [rc.116 → 4.0.0 migration audit](docs/effect-4.0.0.md)
-and [complete upstream release notes](docs/effect-4.0.0-changelog.md).
+The bundled guidance and skills target **Effect `4.0.6` (stable)**.
+See the [4.0.0 → 4.0.6 migration audit](docs/effect-4.0.6.md)
+and [complete upstream release notes](docs/effect-4.0.6-changelog.md).
+The previous [rc.116 → 4.0.0 audit](docs/effect-4.0.0.md) and
+[release notes](docs/effect-4.0.0-changelog.md) remain available as history.
 
 ## Install
 

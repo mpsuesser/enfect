@@ -33,10 +33,9 @@ stream         :: FilePath → Stream Chunk FileSystem    -- incremental chunks
 
 -- For large files
 fs.stream path { chunkSize: 64 * 1024 }
-  |> decodeText "utf-8"
+  |> decodeText { encoding: "utf-8" }
   |> splitLines
-  |> map processLine
-  |> runDrain
+  |> runForEach processLine             -- processLine returns an Effect
 ```
 
 ```haskell
@@ -47,10 +46,9 @@ bad path = readFileString path          -- OOM on gigabyte files
 good :: FilePath → Effect () FileSystem
 good path = pipe
   (fs.stream path { chunkSize: 65536 })
-  $ Stream.decodeText "utf-8"
+  $ Stream.decodeText { encoding: "utf-8" }
   $ Stream.splitLines
-  $ Stream.map processLine
-  $ Stream.runDrain                     -- constant memory usage
+  $ Stream.runForEach processLine       -- executes each effectful handler
 
 -- When to stream
 shouldStream :: FileSize → Bool
@@ -61,3 +59,5 @@ shouldStream size
 ```
 
 `readFile` loads entire file into memory. Use `fs.stream` for large files or line-by-line processing to avoid OOM errors.
+
+Streaming bounds chunk buffering, not the size of a single line: `splitLines` retains an unfinished line, so unbounded records still need a size policy. Use `Stream.map` only for pure handlers; effectful handlers need `Stream.mapEffect` or a sink such as `Stream.runForEach`.

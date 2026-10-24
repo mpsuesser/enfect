@@ -43,6 +43,7 @@ bad url = http.get url (cb)                       -- callback, untyped errors
 good :: URL → Effect User HttpClient
 good url = pipe
   (HttpClient.get url)
+  (Effect.flatMap HttpClientResponse.filterStatusOk)
   (Effect.flatMap (HttpClientResponse.schemaBodyJson User))
   -- schema-decoded body, typed error channel, layer-based testing
 ```
@@ -58,6 +59,7 @@ request = pipe
 resilient :: Effect Response (HttpClient | HttpBodyError)
 resilient = pipe
   (HttpClient.execute request)
+  (Effect.flatMap HttpClientResponse.filterStatusOk)
   (Effect.retry (Schedule.recurs 3))
   (Effect.timeout (Duration.seconds 10))
 
@@ -70,6 +72,8 @@ Direct `http` / `https` imports give you callback APIs, manual TLS plumbing, and
 
 Import these modules from `effect/http`. The retry example assumes an idempotent
 GET; only retry mutations when their idempotency is established by the contract.
+Transport success alone does not reject non-2xx responses. Classify status before
+decoding the success body, or apply `HttpClient.filterStatusOk` to the client.
 
 **Exceptions:**
 

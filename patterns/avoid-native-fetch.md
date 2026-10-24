@@ -27,6 +27,7 @@ bad url = fetch(url, { method: "POST" })     -- scattered options
 good :: String -> Effect User HttpError HttpClient
 good url = pipe(
   HttpClient.get(url),
+  Effect.flatMap(HttpClientResponse.filterStatusOk),
   Effect.flatMap(HttpClientResponse.schemaBodyJson(User))
 )
 ```
@@ -43,6 +44,7 @@ request = pipe(
 resilient :: Effect Response HttpError (HttpClient | Scope)
 resilient = pipe(
   HttpClient.execute(request),
+  Effect.flatMap(HttpClientResponse.filterStatusOk),
   Effect.retry(Schedule.recurs(3)),
   Effect.timeout(Duration.seconds(10))
 )
@@ -57,7 +59,11 @@ Native `fetch` produces untyped Promise rejections. Use `HttpClientRequest`, `Ht
 
 Import the HTTP modules from `effect/http`. Retry only proven-idempotent requests;
 do not copy a retry policy onto ordinary non-idempotent POST/PATCH operations.
+Transport success alone does not reject non-2xx responses; classify status before
+decoding the success body (or use `HttpClient.filterStatusOk` on the client).
 
 Exception: an explicit low-level platform implementation that cannot use Effect HTTP. Keep it isolated, lift it with `Effect.tryPromise`, propagate the supplied `AbortSignal`, classify status before decoding, and decode unknown bodies with `Schema`.
+Declare the promise thunk's signal as an ordinary first parameter `(signal) => ...`;
+rest/default-first wrappers have `.length === 0` and do not receive a signal.
 
 References: EF-9b, Checklist #42 in effect-first-development.md

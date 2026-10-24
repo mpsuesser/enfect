@@ -43,4 +43,6 @@ inspectDefect = Effect.catchDefect
 
 `Effect.promise` converts rejections to defects outside the typed error channel. `Effect.catchDefect` and cause-level handlers can observe them, but expected rejection belongs in `Effect.tryPromise` with a typed error.
 
+When forwarding cancellation, declare `(signal) => ...` as an ordinary first parameter. Both constructors inspect callback `.length`: a zero-argument thunk avoids allocating an `AbortController`, and rest/default-first wrappers receive `undefined` rather than a signal. For `Effect.callback`, signal allocation requires two ordinary parameters `(resume, signal) => ...`. The underlying API must observe the signal for its work to stop.
+
 Any reference to `Effect.promise` is flagged — not just `yield* Effect.promise(...)`. Review callbacks, returned helpers, and direct calls alike. An explicit boundary whose rejection genuinely represents a defect may intentionally use `Effect.promise`; explain that contract rather than relabeling expected failures as defects.

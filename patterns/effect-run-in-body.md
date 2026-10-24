@@ -55,4 +55,4 @@ test = Effect.runPromise (testProgram)        -- ✓ test boundary
 
 Running effects mid-logic breaks composition. Keep effects as values until entry points (main, handlers, tests).
 
-`Effect.runFork` is just as much a runtime escape as `runSync` / `runPromise`: it materialises a `Fiber` at the call site instead of composing with `Effect.forkChild` / `Effect.forkDetach` (which stay inside the Effect world and respect structural concurrency). Reserve all three for the entrypoint / test harness boundary.
+`Effect.runFork` is just as much a runtime escape as `runSync` / `runPromise`: it materialises a root `Fiber` instead of composing with an Effect-native fork. Prefer `Effect.forkChild` for parent-owned work (interrupted when the parent completes), or `forkScoped` / `forkIn` for scope-owned work. `forkDetach` stays inside Effect but deliberately escapes structured lifetime management; it needs explicit shutdown and failure observation. Reserve runtime runners for the entrypoint / test harness boundary.

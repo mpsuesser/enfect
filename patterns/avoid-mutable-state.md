@@ -56,7 +56,7 @@ Examples include private `Map` values for registries, PubSub channel lookup tabl
 
 ## When `Effect.cached` Replaces `let`
 
-Mutable fields used for deduplication or caching (`task?: Promise<T>`, `fiber?: Fiber<T>`, `result?: T`) should be replaced with `Effect.cached`:
+Use `Effect.cached` for fields whose contract is result memoization or sharing an in-flight lookup (`task?: Promise<T>`, `result?: T`), rather than rebinding a mutable cache:
 
 ```ts
 // Before: mutable dedup tracking
@@ -68,3 +68,7 @@ const cachedResult = yield* Effect.cached(computeExpensive());
 ```
 
 For invalidatable caches, use `Effect.cachedInvalidateWithTTL(effect, Duration.infinity)` instead of rebinding a `let`.
+
+Concurrent callers share the pending computation and completed successes or failures are cached. If all waiters leave, the unfinished run is interrupted; interruptions are never cached, so later access starts again. Invalidation detaches an existing run without cancelling its waiters, and prevents that run from overwriting a replacement.
+
+A cache is not a background-job coordinator or a resource scope. Work that must outlive its waiters needs an explicit owner; use scoped fiber supervision for jobs and scoped caches or `RcMap` for resources with finalizers, rather than mechanically replacing every `Fiber` field with `Effect.cached`.
