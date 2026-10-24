@@ -9,8 +9,10 @@ Expert guidance for composing, transforming, and validating data with Effect Sch
 
 ## Effect Source Reference
 
-The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Browse and read files there directly to look up APIs, types, and implementations.
+Baseline: **Effect 4.0.6**. The source checkout is at
+`~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
+Read `git show effect@4.0.6:<path>`; main may be newer. Check the consuming
+project's installed version before using these contracts.
 
 Reference this for:
 
@@ -35,6 +37,7 @@ full codec contract:
 
 **Example:**
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -61,6 +64,7 @@ Use `Schema.decodeTo` to chain schemas with **different types** at each stage. I
 
 **Example — Schema composition (no transformation):**
 
+<!-- typecheck -->
 ```typescript
 import { Schema, SchemaTransformation } from 'effect';
 
@@ -91,6 +95,7 @@ const MilesFromMeters = KilometersFromMeters.pipe(
 
 **Example — Boolean from String via Literal:**
 
+<!-- typecheck -->
 ```typescript
 import { Schema, SchemaTransformation } from 'effect';
 
@@ -117,6 +122,7 @@ Use `.check()` to apply **filters and refinements** to the same type. It doesn't
 
 **Example — Number Validation:**
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -131,6 +137,7 @@ const PositiveInt = Schema.Number.check(
 
 **Example — String Validation:**
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -157,6 +164,7 @@ Filters add validation constraints without changing the schema's type. Apply the
 
 ### String Filters
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -197,6 +205,7 @@ Unicode patterns, and `oneOf` fallback semantics.
 
 ### Number Filters
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -225,6 +234,7 @@ Prefer `Schema.Natural` over a hand-built combination of integer, safe-integer, 
 
 ### Array Filters
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -237,6 +247,7 @@ Schema.Array(Schema.Number).check(Schema.isBetweenLength(2, 5));
 
 Pass multiple filters to a single `.check()` call:
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -249,6 +260,7 @@ With `{ errors: "all" }`, all filters are evaluated and multiple issues can be r
 
 Define custom validation logic using `Schema.makeFilter()`:
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -276,6 +288,11 @@ The filter predicate can return:
 
 Add metadata to filters for better error messages:
 
+A filter's `message` annotation takes precedence over its returned issue
+message (even when the annotation is empty). Nested issue paths are retained
+by both default and Standard Schema formatters.
+
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -294,6 +311,7 @@ const LongString = Schema.String.check(
 
 Group filters into a reusable unit with `Schema.makeFilterGroup`:
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -315,6 +333,7 @@ Schema.Number.check(isInt32);
 
 Associate errors with specific fields using `path` in `makeFilter`:
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -380,6 +399,7 @@ Transformations are first-class reusable objects in v4. Apply them with `Schema.
 
 `Schema.fromJsonString(schema, options)` accepts a `JSON.parse` `reviver` for decoding and `replacer` / `space` options for encoding. Because a reviver may produce arbitrary values, the supplied schema remains responsible for validating the revived result.
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -394,6 +414,7 @@ const PayloadJson = Schema.fromJsonString(
 
 ### String Transformations
 
+<!-- typecheck -->
 ```typescript
 import { Schema, SchemaTransformation } from 'effect';
 
@@ -423,6 +444,7 @@ Schema.NonEmptyString; // checks a non-empty string
 
 ### Number Transformations
 
+<!-- typecheck -->
 ```typescript
 import { Schema, SchemaTransformation } from 'effect';
 
@@ -443,6 +465,7 @@ Schema.Finite.pipe(
 
 ### Duration Transformations
 
+<!-- typecheck -->
 ```typescript
 import { Schema, SchemaTransformation } from 'effect';
 
@@ -458,6 +481,7 @@ const DurationFromString = Schema.String.pipe(
 
 `Schema.split` was removed in v4. Implement it manually:
 
+<!-- typecheck -->
 ```typescript
 import { Schema, SchemaTransformation } from 'effect';
 
@@ -532,6 +556,7 @@ contract permits them. RPC selects a payload codec through `codecFor`; use
 
 Use `SchemaTransformation.transform` when the transformation always succeeds:
 
+<!-- typecheck -->
 ```typescript
 import { Schema, SchemaTransformation } from 'effect';
 
@@ -581,6 +606,7 @@ const NumberFromString = Schema.String.pipe(
 
 Use `SchemaTransformation.transformOptional` for optional key transformations:
 
+<!-- typecheck -->
 ```typescript
 import { Option, Schema, SchemaTransformation } from 'effect';
 
@@ -666,6 +692,12 @@ Keep decoded shapes schema-first with `Schema.Class`. Choose construction and de
 
 `make` and `makeEffect` apply constructor defaults and type-side checks. They are constructors, not substitutes for decoding unknown external input.
 
+Expected rejection belongs in `SchemaIssue.Issue`. A synchronous throw inside
+a transformation, filter, middleware, or declaration callback is a defect in
+Effect/Exit/Promise adapters, not a schema mismatch. Option/Result adapters do
+not turn defects into absence or validation errors; sync boundaries may throw.
+Schema initialization/compilation errors are outside that callback boundary.
+
 ### Decoding APIs
 
 | API                    | Return Type                          | Use Case                        |
@@ -679,6 +711,7 @@ Keep decoded shapes schema-first with `Schema.Class`. Choose construction and de
 
 **Example:**
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -714,6 +747,7 @@ const asyncResult = Schema.decodeUnknownEffect(Person)({
 
 ### Basic Struct
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -729,6 +763,7 @@ const Person = Schema.Struct({
 
 Optionality describes the encoded contract, not constructor convenience. Use `optionalKey` only when the key may be absent, `optional` only when explicit `undefined` is accepted, and nullish schemas only when those values are valid encoded inputs.
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -741,6 +776,7 @@ const User = Schema.Struct({
 
 ### Nullable Fields
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -753,6 +789,7 @@ const Data = Schema.Struct({
 
 ### Partial and Required (via mapFields)
 
+<!-- typecheck -->
 ```typescript
 import { Schema, Struct } from 'effect';
 
@@ -773,6 +810,7 @@ const RequiredUser = PartialUser.mapFields(Struct.map(Schema.requiredKey));
 
 ### Picking and Omitting (via mapFields)
 
+<!-- typecheck -->
 ```typescript
 import { Schema, Struct } from 'effect';
 
@@ -788,6 +826,7 @@ const NoIDRecipe = Recipe.mapFields(Struct.omit(['id']));
 
 ### Extending Structs (via mapFields or fieldsAssign)
 
+<!-- typecheck -->
 ```typescript
 import { Schema, Struct } from 'effect';
 
@@ -815,10 +854,22 @@ const DogWithBreed3 = Schema.Struct({
 - Apply `Schema.encodeKeys({ decodedName: 'encoded_name' })` after assembling the full shape when wire or storage key names are the only difference. Keep an explicit boundary mapping when behavior, joins, validation, or domain translation differs.
 - Use `Schema.extendTo(fields, derive)` sparingly for structural projections with decoded-only derived fields. Derived fields are removed during encoding; do not use it to hide a distinct domain contract or replace a schema class.
 
+`StructWithRest` requires an object-shaped Encoded base and forbids whole-object
+transformations even with an empty rest list. Assemble the object first, then
+apply `fromJsonString` or another whole-object codec. Field transformations are
+supported. Class `.extend` replaces same-name fields without checking compatibility
+with the parent contract.
+
+For Go JSON boundaries, use unstable `Schema.toCodecGoJson` only when nil/empty
+normalization is intentional. It recursively treats optional-key `null` as missing
+and required Array/Record `null` as empty; already-accepted nulls remain values.
+See `effect-schema-v4` for exclusions and protocol schema additions.
+
 ## Advanced Composition Patterns
 
 ### Combining Arrays and Transformations
 
+<!-- typecheck -->
 ```typescript
 import { Schema, SchemaTransformation } from 'effect';
 
@@ -829,7 +880,7 @@ const ReadonlySetFromArray = <A, I, RD, RE>(
 		Schema.decodeTo(
 			Schema.ReadonlySet(Schema.toType(itemSchema)),
 			SchemaTransformation.transform({
-				decode: (items) => new Set(items),
+				decode: (items): ReadonlySet<A> => new Set(items),
 				encode: (set) => Array.from(set.values())
 			})
 		)
@@ -841,6 +892,7 @@ const schema = ReadonlySetFromArray(Schema.String);
 
 ### Multi-Stage Transformations
 
+<!-- typecheck -->
 ```typescript
 import { Schema, SchemaTransformation } from 'effect';
 
@@ -859,6 +911,7 @@ const CentsFromDollars = Schema.Number.pipe(
 
 v4 replaces `optionalToRequired`, `optionalToOptional`, and `requiredToOptional` with `Schema.decodeTo` + `SchemaGetter.transformOptional`:
 
+<!-- typecheck -->
 ```typescript
 import { Option, Predicate, Schema, SchemaGetter } from 'effect';
 
@@ -883,8 +936,13 @@ const schema = Schema.Struct({
 
 `Schema.withDecodingDefaultTypeKey` / `Schema.withDecodingDefaultType` take defaults on the decoded **Type** side, such as `1`. Default effects may require services and may fail with `Schema.SchemaError`.
 
+Already-successful defaults (`Effect.succeed`) work with synchronous decoding.
+Use Effect decoders for asynchronous or service-dependent defaults. Constructor
+defaults are a separate contract and fail directly with `SchemaIssue.Issue`.
+
 Keep fields required in the normalized decoded model when a default guarantees their value. Apply the default during construction or decoding; do not make domain values optional merely to make construction easier.
 
+<!-- typecheck -->
 ```typescript
 import { Effect, Schema } from 'effect';
 
@@ -910,6 +968,7 @@ Schema.decodeUnknownSync(schema)({ encodedDefault: '2' });
 
 ### Email Validation
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -922,6 +981,7 @@ const Email = Schema.String.check(
 
 ### UUID Validation
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -932,6 +992,7 @@ const UserId = Schema.String.check(Schema.isUUID()).pipe(
 
 ### Clamping Numbers
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -942,6 +1003,7 @@ const Percentage = Schema.Number.check(
 
 ### Template Literal Parsing
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -963,6 +1025,7 @@ brands. `Schema.fromBrand` additionally applies a constructor's checks, and its
 identifier must be that constructor's sole brand key. Representation round trips
 preserve checks, but not nominal brands; reapply brands after rebuilding.
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -976,6 +1039,7 @@ const PositiveInt = Schema.Number.check(
 
 ### Form Validation
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 
@@ -993,6 +1057,7 @@ const LoginForm = Schema.Struct({
 
 ### API Response Parsing
 
+<!-- typecheck -->
 ```typescript
 import { Schema } from 'effect';
 

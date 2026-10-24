@@ -7,6 +7,13 @@ description: Implement typeclasses with curried signatures and dual APIs for bot
 
 Use this skill when implementing typeclasses that provide reusable abstractions across multiple types.
 
+## Source Reference
+
+Baseline: **Effect 4.0.6**. Read `git show effect@4.0.6:packages/effect/src/Function.ts`,
+`Order.ts`, and `Duration.ts` in the Effect source checkout; main may be newer.
+The typeclasses below are application-defined, not built-in Effect services.
+The `dual` and `Order.mapInput` contracts are unchanged from 4.0.0.
+
 ## Pattern: Curried Typeclass Functions
 
 All typeclass functions must be **fully curried** to enable partial application:
@@ -25,7 +32,7 @@ export const isMoreThan =
 	(minimum: Duration.Duration) =>
 	(self: A): boolean => {
 		const current = D.getDuration(self);
-		return Duration.isGreaterThanOrEqualTo(current, minimum);
+		return Duration.isGreaterThan(current, minimum);
 	};
 ```
 
@@ -51,7 +58,7 @@ export const isMoreThan = <A>(D: Durable<A>) =>
 		2, // Number of arguments for data-first form
 		(self: A, minimum: Duration.Duration): boolean => {
 			const current = D.getDuration(self);
-			return Duration.isGreaterThanOrEqualTo(current, minimum);
+			return Duration.isGreaterThan(current, minimum);
 		}
 	);
 ```
@@ -105,6 +112,7 @@ const longAppointments = appointments.filter(
 
 ## Complete Typeclass Example
 
+<!-- typecheck -->
 ```typescript
 import { Duration, Order } from 'effect';
 import * as Function from 'effect/Function';
@@ -136,7 +144,7 @@ export const isMoreThan = <A>(D: Durable<A>) =>
 		(minimum: Duration.Duration) => (self: A) => boolean,
 		(self: A, minimum: Duration.Duration) => boolean
 	>(2, (self: A, minimum: Duration.Duration): boolean =>
-		Duration.isGreaterThanOrEqualTo(D.getDuration(self), minimum)
+		Duration.isGreaterThan(D.getDuration(self), minimum)
 	);
 
 /**
@@ -145,6 +153,10 @@ export const isMoreThan = <A>(D: Durable<A>) =>
 export const OrderByDuration = <A>(D: Durable<A>): Order.Order<A> =>
 	Order.mapInput(Duration.Order, (self: A) => D.getDuration(self));
 ```
+
+`isMoreThan` excludes equality. For an inclusive minimum, expose a separately
+named `isAtLeast` using `Duration.isGreaterThanOrEqualTo`; do not change the law
+silently while re-exporting a predicate under a domain name.
 
 ## When to Use
 

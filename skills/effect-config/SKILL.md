@@ -7,8 +7,9 @@ You are an Effect TypeScript expert specializing in typed configuration loading,
 
 ## Effect Source Reference
 
-The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Browse and read files there directly to look up APIs, types, and implementations.
+Baseline: **Effect 4.0.6**. The source checkout is at
+`~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
+Read exact-tag files with `git show effect@4.0.6:<path>`; main may be newer.
 
 Reference these files for Config/ConfigProvider details:
 
@@ -79,9 +80,11 @@ const upperHost = Config.String('HOST').pipe(
 );
 ```
 
-### `Config.orElse` — Fallback on Any Error
+### `Config.orElse` — Fallback on Typed Config Errors
 
-Unlike `withDefault`, this catches **all** `ConfigError`s:
+Unlike `withDefault`, this recovers missing data and pure typed `ConfigError`
+causes, including invalid values. Defects, interruption, and mixed causes
+propagate unchanged; they never reach the fallback:
 
 ```ts
 const host = Config.String('HOST').pipe(
@@ -226,9 +229,30 @@ structural children. Opaque encodings such as `Schema.Any`, `Schema.Unknown`, an
 `Schema.Json` are rejected; use a concrete shape or
 `Schema.fromJsonString(Schema.Json)` for scalar JSON.
 
+`Config.Record` splits a string pair only at its first key/value separator,
+preserving the remainder (`authorization=abc==` keeps `abc==`). Empty keys or
+values are skipped. An empty key/value separator uses the first two characters;
+prefer a nonempty separator for configuration contracts.
+
+<!-- typecheck -->
+```ts
+import { Config, ConfigProvider, Effect } from 'effect';
+import * as Schema from 'effect/Schema';
+
+const headers = Config.Record(Schema.String, Schema.String, 'HEADERS');
+const parsed = Effect.runSync(headers.parse(ConfigProvider.fromUnknown({
+	HEADERS: 'authorization=abc=='
+})));
+// { authorization: 'abc==' }
+```
+
 Environment/bracket array indices must be unpadded decimal integers from 0 through
 4294967294. Numeric-looking keys such as `01` remain object keys; use `[1]` for
 array paths.
+
+`Config.schema` retains record entries with numeric key schemas such as
+`Schema.Int` / `Schema.Number`; key selection follows schema index-signature
+semantics rather than testing the raw string key as a decoded number.
 
 Missing or unavailable representations are decoded as `undefined` before `Config.withDefault` and `Config.option` decide semantic absence. A successful decoded `undefined` or an explicitly present empty structure remains a real value and is not replaced by a default.
 
@@ -327,6 +351,13 @@ const provider2 = ConfigProvider.fromDotEnvContents(
 );
 ```
 
+With expansion enabled, references resolve recursively in source values, but
+substituted text is not scanned again as syntax. Cyclic references count as
+unset; `:-` defaults apply to missing or expanded-empty values. Escaped dollars
+stay literal, and nested defaults are matched against source braces, not braces
+introduced by a substitution. Expansion uses the parsed dotenv record, not a
+second implicit lookup in the process environment.
+
 ### `ConfigProvider.fromDotEnv` — Load `.env` Files
 
 Reads a `.env` file from disk. Returns an Effect (requires `FileSystem` in context).
@@ -395,7 +426,7 @@ const defaults = ConfigProvider.fromUnknown({
 const combined = ConfigProvider.orElse(envProvider, defaults);
 ```
 
-At the `Config` level, `Config.orElse` handles missing data and all `ConfigError`s;
+At the `Config` level, `Config.orElse` handles missing data and pure typed `ConfigError` causes;
 its fallback determines whether an outer default or option can recover. Provider
 fallback only chooses a source and does not perform that error recovery.
 
@@ -499,6 +530,7 @@ const program = Effect.gen(function* () {
 
 Always use `ConfigProvider.fromUnknown` or `ConfigProvider.fromEnvRecord({...})` in tests for deterministic, hermetic config:
 
+<!-- typecheck -->
 ```ts
 import { Config, ConfigProvider, Effect } from 'effect';
 
@@ -539,6 +571,11 @@ Config operations fail with `ConfigError`, which wraps either:
 - **`SourceError`** — the provider could not read data (I/O failure, permission error)
 - **`SchemaError`** — data was found but didn't match the schema (wrong type, out of range, missing key)
 
+Provider parsing preserves unrelated defects and interruption reasons, including
+their annotations. A `SourceError` reason becomes a typed `ConfigError` without
+erasing other reasons in the cause. An `orElse` fallback is not a catch-all for
+provider faults or mixed failures.
+
 ```ts
 const program = Config.Int('PORT')
 	.parse(ConfigProvider.fromUnknown({ PORT: 'not-a-number' }))
@@ -559,6 +596,7 @@ const program = Config.Int('PORT')
 
 ## Practical Example: Full Application Config
 
+<!-- typecheck -->
 ```ts
 import { Config, ConfigProvider, Effect, Schema } from 'effect';
 

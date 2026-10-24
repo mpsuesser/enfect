@@ -7,8 +7,10 @@ You are an Effect TypeScript expert. This skill is a **migration reference** —
 
 ## Effect Source Reference
 
-The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Browse and read files there directly to look up APIs, types, and implementations.
+Baseline: **Effect 4.0.6**. The source checkout is at
+`~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`; read exact release
+files with `git show effect@4.0.6:<path>`, not a potentially newer main.
+Check the consuming project's installed version before using these contracts.
 
 Reference this for:
 
@@ -190,6 +192,10 @@ For the non-negative safe-integer domain, use `Schema.Natural`.
 
 ### Custom Filters
 
+Filter `message` annotations override directly returned messages, including an
+empty-string annotation. Both the default and Standard Schema formatters retain
+filter-reported nested paths when applying that override.
+
 ```ts
 // v3: inline predicate filter
 Schema.String.pipe(Schema.filter((s) => s.length > 0));
@@ -206,6 +212,7 @@ Schema.Option(Schema.String).pipe(Schema.refine(Option.isSome));
 
 ### String Transforms (not filters)
 
+<!-- typecheck -->
 ```ts
 // v4: string transformations use SchemaTransformation + .decode()
 import { Schema, SchemaTransformation } from 'effect';
@@ -348,6 +355,7 @@ const Person = Schema.Struct({ name: Schema.String });
 
 `pick`, `omit`, `partial`, `required`, and `extend` are now expressed through `mapFields`:
 
+<!-- typecheck -->
 ```ts
 import { Schema, Struct } from 'effect';
 
@@ -373,7 +381,8 @@ base.mapFields(Struct.map(Schema.optionalKey));
 base.mapFields(Struct.mapPick(['a'], Schema.optional));
 
 // required
-base.mapFields(Struct.map(Schema.requiredKey));
+const partial = base.mapFields(Struct.map(Schema.optionalKey));
+partial.mapFields(Struct.map(Schema.requiredKey));
 
 // extend (add fields)
 base.mapFields(Struct.assign({ d: Schema.Date }));
@@ -409,7 +418,10 @@ Use `Schema.withDecodingDefaultKey` / `Schema.withDecodingDefault` when the defa
 Use `Schema.withDecodingDefaultTypeKey` / `Schema.withDecodingDefaultType` when the default is on the decoded **Type** side, such as `1` for `Schema.FiniteFromString`.
 
 Defaults are `Effect` values: they may require services and may fail with `Schema.SchemaError`.
+Already-successful defaults such as `Effect.succeed(...)` preserve synchronous
+decoding; asynchronous or service-dependent defaults still need an Effect decoder.
 
+<!-- typecheck -->
 ```ts
 import { Effect, Schema, SchemaGetter } from 'effect';
 
@@ -456,6 +468,7 @@ const fallback = SchemaGetter.withDefault(Effect.succeed('viewer'));
     - `Schema.StringFromUriComponent`
     - `Schema.JsonObject`
 
+<!-- typecheck -->
 ```ts
 import { Effect, Schema } from 'effect';
 import * as Arbitrary from 'effect/Arbitrary';
@@ -489,6 +502,7 @@ const nameArbitrary = Arbitrary.schema(Schema.NonEmptyString);
 
 `Schema.Graph(kind, node, edge)` models immutable Effect graphs. Its canonical JSON codec encodes the active indexed snapshot, preserving sparse active node and edge indexes, isolated nodes, parallel edges, self-loops, and stored edge orientation:
 
+<!-- typecheck -->
 ```ts
 import { Graph, Schema } from 'effect';
 
@@ -520,10 +534,69 @@ Schema.decodeUnknownOption(Schema.JsonObject)({ key: [1, true, null] });
 Schema.decodeUnknownOption(Schema.JsonObject)([1, 2, 3]); // Option.none()
 ```
 
+### Go JSON normalization (unstable)
+
+`Schema.toCodecGoJson(schema)` derives a JSON codec with recursive nil handling:
+optional-key `null` becomes a missing key, and required `Schema.Array` / `Record`
+`null` becomes `[]` / `{}`. Existing nullable schemas keep accepted `null` values.
+Tuples, non-empty arrays, structs, and required base64 byte strings are not
+normalized as collections; collection checks still apply to the empty value.
+Encoding follows `toCodecJson`, without the extra null normalization.
+Use explicit nullable fields with `toCodecJson` when nil versus empty matters.
+
+<!-- typecheck -->
+```ts
+import * as Schema from 'effect/Schema';
+
+class Container extends Schema.Class<Container>('Container')({
+	Id: Schema.String,
+	Names: Schema.Array(Schema.String),
+	Labels: Schema.Record(Schema.String, Schema.String),
+	Status: Schema.optionalKey(Schema.String)
+}) {}
+
+const decode = Schema.decodeUnknownSync(Schema.toCodecGoJson(Container));
+const container = decode({ Id: 'a', Names: null, Labels: null, Status: null });
+// Container { Id: 'a', Names: [], Labels: {} }
+```
+
+### New protocol schemas
+
+- Unstable `SemVer`, `SemVerFromString`, `SemVerRange`, and
+  `SemVerRangeFromString` have representation revivers and canonical JSON /
+  StringTree string encodings. Strict versions reject `v` prefixes, surrounding
+  whitespace, partial versions, and leading zeros; build metadata is retained.
+- Experimental network schemas include `DomainName{FromString}`,
+  `ScopedIpv6Literal{FromString}`, `Host{FromString}`, `HostPort{FromString}`, and
+  DNS record schemas. `DomainName` checks normalized lowercase ASCII / punycode;
+  `DomainNameFromString` normalizes input. `HostPortFromString` accepts
+  `host:port` or `[IPv6]:port`. `Schema.Port` allows 0–65535, unlike
+  `Config.Port` (1–65535). Parsing a host does not resolve DNS.
+- Unstable `DateTimeUtcFromHttpDate` accepts all three RFC 9110 date forms and
+  emits IMF-fixdate. `RetryAfterFromString` accepts whole nonnegative seconds or
+  an HTTP date and decodes to `RetryAfter` (`Duration` / `DateTime` tags).
+  Durations must be finite and nonnegative; encoding rounds fractional delay
+  seconds up. These schemas parse header values, not retry policy.
+
+<!-- typecheck -->
+```ts
+import * as Schema from 'effect/Schema';
+
+const version = Schema.decodeSync(Schema.SemVerFromString)('1.2.3+build.7');
+const range = Schema.decodeSync(Schema.SemVerRangeFromString)('^1.2.3');
+const host = Schema.decodeSync(Schema.DomainNameFromString)('EXAMPLE.COM');
+const endpoint = Schema.decodeSync(Schema.HostPortFromString)('example.com:443');
+const date = Schema.decodeSync(Schema.DateTimeUtcFromHttpDate)(
+	'Sun, 06 Nov 1994 08:49:37 GMT'
+);
+const retryAfter = Schema.decodeSync(Schema.RetryAfterFromString)('120');
+```
+
 ### Representation Reference Policy
 
 `Schema.toRepresentation`, `SchemaRepresentation.toRepresentation`, and `SchemaRepresentation.toRepresentations` accept `{ referencePolicy }`. The callback runs once per encoded-side AST candidate after occurrences have been counted:
 
+<!-- typecheck -->
 ```ts
 import { Schema, SchemaRepresentation } from 'effect';
 
@@ -550,6 +623,8 @@ The standalone `SchemaError` root module was removed. Parser adapters such as `S
 Use its `issue` and formatter/message for validation diagnostics; a captured
 parser-error stack is not a diagnostic contract. Synchronous parser optimizations
 do not change the choice between constructors, sync decoders, and Effect decoders.
+Its `toJSON()` and Node inspection return only `{ _tag: 'SchemaError', message }`;
+read `.issue` explicitly when structured diagnostics are needed.
 
 ### Partial tagged-union matching
 
@@ -560,6 +635,10 @@ business decisions. Use `.matchOrElse` when all remaining cases genuinely share
 one behavior. The `toTaggedUnion` helper narrows the fallback to omitted variants;
 the direct `TaggedUnion` overload types its fallback as the full union.
 Neither matcher decodes unknown input. See `effect-pattern-matching` for a checked example.
+Both schemas expose `.tag`: the chosen discriminator key for `toTaggedUnion`,
+and `'_tag'` for `TaggedUnion`. Duplicate discriminants throw at construction,
+including nested unions and numeric/string collisions such as `1` and `'1'`.
+There is no compile-time uniqueness guarantee in 4.0.6.
 
 ### JSON Schema import, conversion, and Standard Schema
 
@@ -581,8 +660,16 @@ Neither matcher decodes unknown input. See `effect-pattern-matching` for a check
   maxima use the same numeric bound but count code points. Code-point checks
   export exact string bounds. Direct `isPattern` exports omit patterns unless
   the regex has `u` and only optional `d`, `g`, or `y` flags; sticky patterns are
-  anchored at the start. Casing, safe integers, size, uniqueness, and non-number
+  anchored at the start. Casing, size, uniqueness, and non-number
   ranges may also have looser or omitted exported constraints.
+- `Schema.Int` / `isInt()` export exact `type: 'integer'` with safe-integer
+  minimum and maximum bounds. Repeated numeric, length, item-count, and
+  property-count bounds tighten inline; redundant inclusive/exclusive bounds
+  are dropped. Exact integer branches can retain `oneOf`.
+- Numeric record keys and BigInt template parts export supported patterns.
+  Tuples with post-rest elements export a looser array shape and minimum length,
+  not an exact position-by-position contract. Bare redundant nested `anyOf`
+  alternatives flatten without removing annotated/reference/`oneOf` boundaries.
 - `SchemaRepresentation.fromJsonSchemaDocument` rejects unsupported references,
   validation keywords, object/array `const` or `enum` values, and intersections
   it cannot represent faithfully. Do not discard the failing constraint to make
@@ -597,6 +684,13 @@ Neither matcher decodes unknown input. See `effect-pattern-matching` for a check
   invalid in that mode with their source path. Patterns default to rejection;
   ignoring them can also reject valid inputs by creating overlapping `oneOf`
   branches. Import/re-export is not a lossless equivalence guarantee.
+- Import option `includeAnnotationKey` preserves selected JSON-compatible custom
+  keys as opaque metadata, after `onEnter`. Structural/validation keywords,
+  reserved Effect annotations, and `~` keys are excluded. Metadata stays only on
+  surviving normalized values; eliminated branches lose it, and later merges
+  overwrite collisions. Use the export option too when emitting custom keys.
+  This neither enforces their semantics nor guarantees a lossless round trip;
+  exceptions from the predicate propagate unchanged.
 - `JsonSchema` dialect conversion preserves custom keywords and representable
   conditionals, contains, dependencies, identifiers, and tuples; it relocates
   local references and throws for unsupported conversions. These synchronous
@@ -604,11 +698,21 @@ Neither matcher decodes unknown input. See `effect-pattern-matching` for a check
 - Import vendored V1 interoperability types from `effect/StandardSchema`, for
   example `StandardSchemaV1` and `StandardJSONSchemaV1`. Continue to adapt Effect
   schemas with `Schema.toStandardSchemaV1`; the new module is not a schema builder.
+- `toStandardSchemaV1` and `toStandardJSONSchemaV1` return fresh shallow copies,
+  use the actual child schema, preserve per-call hooks/options, and compose in
+  either order. Call statics using private `this.#field` on the original class,
+  not the adapted copy.
 - Binary encoding is available from `effect/encoding` as `SchemaBinary`.
   See `effect-schema-composition` for codecs and `effect-stream` for framing.
 
 ## Parsing and compilation contracts
 
+- Synchronous throws from user transformations, filters, middleware, and
+  declaration callbacks become defects in Exit/Effect/Promise adapters, not
+  typed schema mismatches. Return/fail with `SchemaIssue.Issue` for expected
+  rejection. Option/Result/sync adapters do not turn defects into absence or
+  validation errors; synchronous boundaries may throw. Schema initialization
+  and compilation failures are outside this callback exception boundary.
 - Pass parse options to decoder, encoder, or constructor adapters. `parseOptions`
   annotations no longer affect parsing, and operation options apply throughout
   the complete parse. `propertyOrder` is removed; order presentation explicitly.
@@ -627,6 +731,10 @@ Neither matcher decodes unknown input. See `effect-pattern-matching` for a check
 - Class `make`, `makeOption`, and `makeEffect` preserve existing instances. Use
   `new MyClass(fields)` for a distinct instance. Class equivalence now compares
   declared fields, excluding unrelated runtime properties.
+- `StructWithRest` requires an object-shaped Encoded base and rejects whole-object
+  transformations, even with no rest schemas. Assemble the object first, then
+  wrap it with `fromJsonString` or another whole-object codec. Field transforms
+  remain supported. Object-shaped Encoded types alone do not prove compatibility.
 - `TemplateLiteral` rejects encoded/transformed parts, even in nested templates
   or unions. Use `TemplateLiteralParser` for transformed tuple parts and provide
   their decoding/encoding services. Its encoded projection validates the template.
@@ -637,6 +745,17 @@ Neither matcher decodes unknown input. See `effect-pattern-matching` for a check
 - Built-in revivers live in `SchemaRepresentation`; constructors are
   `makeReviverDeclaration`, `makeReviverFilter`, and `makeReviverFilterGroup`.
   `toEncoderXml` fails directly with `SchemaIssue.Issue`.
+- Rerunning suspended union/struct parsing effects does not reuse mutable parse
+  results; compiled struct parsers follow the same rule. This is rerun safety,
+  not memoization of effectful validation. Encoding omitted trailing optional
+  tuple elements no longer leaves an array hole.
+- `ReadonlyMap`, `ReadonlySet`, `HashMap`, and `HashSet` schema equivalence compares
+  complete contents, not proper subsets. Collection formatters handle symbols
+  and null-prototype values; map/set entries sort by formatted output, so do not
+  depend on their previous inspection ordering.
+- `Enum` preserves inline object-literal member types without `as const`.
+  Base64 checks handle large inputs without stack overflow; finite-number string
+  checks reject long invalid digit runs in linear time without changing the language.
 - For tooling, use `SchemaAST.AST` and named instance interfaces rather than
   `SchemaAST.Base` or constructor prototype types. Union mode is
   `ast.options?.mode` (default `anyOf`); migrate persisted representation documents.
@@ -667,8 +786,9 @@ Bidirectional transformation pairs (decode + encode getters). Key exports:
 - `durationFromString` — string ↔ `Duration.Duration` transform
 - `optionFromNullOr()`, `optionFromOptionalKey()` — Option wrapping
 - `fromJsonString` — JSON string codec
-- `Middleware` class — wraps the full parsing Effect pipeline (for fallbacks, retries)
+- `Middleware` interface / `makeMiddleware` constructor — wraps the full parsing Effect pipeline
 
+<!-- typecheck -->
 ```ts
 import { Schema, SchemaTransformation } from 'effect';
 
@@ -692,7 +812,7 @@ const DurationFromString = Schema.String.pipe(
 
 Single-direction transform primitives. `Getter<T, E, R>` is a tagged
 union of synchronous, optional, and effectful transformations. Interpret one with
-`SchemaGetter.run(getter, option)` to obtain `Effect<Option<T>, Issue, R>`.
+`SchemaGetter.run(getter, option, parseOptions)` to obtain `Effect<Option<T>, Issue, R>`.
 Getter values expose only `pipe`; use standalone dual `map`, `compose`, and `run`.
 Key exports:
 
@@ -706,6 +826,18 @@ Key exports:
 - `checkEffect(fn)` — effectful validation
 - `String()`, `Number()`, `Boolean()`, `BigInt()`, `Date()` — coercion getters
 
+`BigInt()` reports unconvertible strings or non-integer numbers as typed
+`SchemaIssue.InvalidValue`, rather than a thrown conversion error.
+`encodeBase64Url({ padding: true })` retains `=` padding; the default is unpadded.
+`splitKeyValue` splits each pair at its first separator and preserves the rest
+of the value (including base64 padding). Missing/empty keys or values are skipped;
+an empty key/value separator uses only the first two characters.
+
+Bracket-path parsing for `fromFormData` / `fromURLSearchParams` materializes
+indexed containers as arrays only when they have at most 20 holes. More sparse
+inputs remain objects keyed by index strings, avoiding enormous sparse arrays.
+The receiving schema must accept or reject that structural representation.
+
 Use `transformOptionalEffect` instead of constructing a Getter directly.
 Use `transformEffect` / `transformOptionalEffect` instead of `onSome` / `onNone`.
 `SchemaGetter.forbiddenEncoding` is the encode getter for a decode-only codec.
@@ -713,6 +845,7 @@ For transformation pairs, use `SchemaTransformation.makeTransformation` and
 the standalone dual `composeTransformation(first, second)`; transformations and
 middleware support `.pipe`.
 
+<!-- typecheck -->
 ```ts
 import { Schema, SchemaGetter } from 'effect';
 
@@ -729,6 +862,7 @@ const NumberFromString = Schema.String.pipe(
 
 Classes still use the same pattern — `Schema.Class<Self>(tag)(fields)`:
 
+<!-- typecheck -->
 ```ts
 import { Schema } from 'effect';
 
@@ -781,8 +915,11 @@ interface MakeOptions {
 }
 ```
 
-When `disableChecks: true`, schema checks are skipped during construction. Constructor defaults (`withConstructorDefault`) are **still applied** even when checks are disabled. This was renamed from `disableValidation` in v3.
+When `disableChecks: true`, filters/checks are skipped, not type or structural
+parsing. Constructor defaults (`withConstructorDefault`) are **still applied**.
+This was renamed from `disableValidation` in v3; it is not an unchecked cast.
 
+<!-- typecheck -->
 ```ts
 import { Effect, Schema } from 'effect';
 
@@ -796,17 +933,19 @@ class User extends Schema.Class<User>('User')({
 // Normal construction — validates input
 const user1 = new User({ name: 'Alice' });
 
-// Skip checks — trusts the data, but still applies constructor defaults
+// Skip checks, retaining structural parsing and constructor defaults
 const user2 = new User({ name: 'Alice' }, { disableChecks: true });
 
 // Also available on make, makeEffect, and makeOption:
 const user3 = User.make({ name: 'Alice' }, { disableChecks: true });
-const user4 =
-	yield* User.makeEffect({ name: 'Alice' }, { disableChecks: true });
+const user4 = User.makeEffect({ name: 'Alice' }, { disableChecks: true });
 const user5 = User.makeOption({ name: 'Alice' }, { disableChecks: true });
 ```
 
 When a subclass `extend`s a parent, the parent constructor is automatically called with `disableChecks: true` after the child validates, avoiding double-validation.
+Same-name extension fields replace the base fields; `.extend` does not verify
+that the replacement preserves the parent's contract. Reuse compatible fields
+or define a separate model when the contract changes.
 
 ### TaggedClass (auto `_tag` field)
 
@@ -821,6 +960,7 @@ class Cat extends Schema.TaggedClass<Cat>()('Cat', {
 
 Define yieldable tagged errors with `Schema.TaggedError`:
 
+<!-- typecheck -->
 ```ts
 import { Effect, Schema } from 'effect';
 

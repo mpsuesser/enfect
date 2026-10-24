@@ -21,7 +21,10 @@ scalars containing colon-whitespace or a trailing colon: quote those values.
 ## Import Pattern
 
 The CLI APIs are marked `@stability unstable` even at the stable package release.
-Inspect `effect@4.0.0:packages/effect/src/cli/` for this baseline's contracts.
+Baseline: **Effect 4.0.6**. In the Effect source checkout, read
+`git show effect@4.0.6:packages/effect/src/cli/<module>.ts`; main may be newer.
+`withOptionalValue`, boolean negation combinators, and `Command.validate` ship
+in this tag despite their upstream `@since 4.1.0` annotations.
 
 ```typescript
 import { Argument, Command, Flag, Prompt } from 'effect/cli';
@@ -39,8 +42,14 @@ Positional arguments are parsed in order. Use `Flag.Boolean` for toggles or `Arg
 
 ### Constructors
 
+<!-- typecheck -->
 ```typescript
 import { Argument } from 'effect/cli';
+import * as Schema from 'effect/Schema';
+
+class MySchema extends Schema.Class<MySchema>('FileSettings')({
+	name: Schema.String
+}) {}
 
 Argument.String('name'); // string
 Argument.Int('count'); // number (integer)
@@ -66,8 +75,11 @@ Argument.FileSchema('config', MySchema); // reads and validates file via Schema
 
 ### Combinators
 
+<!-- typecheck -->
 ```typescript
-import { Argument } from 'effect/cli';
+import { Config } from 'effect';
+import { Argument, Prompt } from 'effect/cli';
+import * as Schema from 'effect/Schema';
 
 // Description for help text
 Argument.String('file').pipe(Argument.withDescription('Input file'));
@@ -130,10 +142,20 @@ Use `--` to pass trailing operands that otherwise look like options; a lone
 `-` is also retained as a value. Numeric lexing does not replace the chosen
 primitive's validation.
 
+Short-option bundles split into letters: `-vn=3` means `-v -n=3`, not one
+multi-letter flag. Use `--num=3`, not `-num=3`. The token `--=value` is an
+operand, not a long option with an empty name.
+
 ### Constructors
 
+<!-- typecheck -->
 ```typescript
 import { Flag } from 'effect/cli';
+import * as Schema from 'effect/Schema';
+
+class MySchema extends Schema.Class<MySchema>('FileSettings')({
+	name: Schema.String
+}) {}
 
 Flag.Boolean('verbose'); // required: --verbose / --no-verbose; omission fails
 Flag.String('config'); // --config value
@@ -160,8 +182,13 @@ Flag.KeyValuePair('env'); // --env FOO=bar → Record<string, string>
 
 ### Combinators
 
+<!-- typecheck -->
 ```typescript
-import { Flag } from 'effect/cli';
+import { Config } from 'effect';
+import { Flag, Prompt } from 'effect/cli';
+import * as Schema from 'effect/Schema';
+
+const Email = Schema.String.check(Schema.isPattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/));
 
 // Alias
 Flag.Boolean('verbose').pipe(
@@ -221,6 +248,40 @@ Hidden flags parse normally, but generated help, shell completions, and typo sug
 
 Bare boolean flags are required. `--verbose` produces `true`, `--no-verbose` produces `false`, and omission produces `CliError.MissingOption`. Add `Flag.withDefault(false)` for ordinary opt-in switch behavior, or use `Flag.optional` / a config or prompt fallback when absence has separate meaning.
 
+### Optional values and boolean negation
+
+`Flag.withOptionalValue(rawString)` (also on `Param`) follows GNU inline-only
+syntax: `--watch=until-done` / `-w=until-done`. A bare `--watch` validates the
+configured raw string through the flag's parser. It never consumes the following
+operand or subcommand. This makes the **value** optional, not the flag itself;
+add `optional` or a default if omission is allowed.
+
+`Flag.withNegation(name)` replaces the default `no-<name>` spelling;
+`Flag.withoutNegation` removes the negated form. Replaced/removed names are
+rejected and omitted from completions. These have no effect on non-boolean flags.
+
+<!-- typecheck -->
+```typescript
+import { Flag } from 'effect/cli';
+
+const watch = Flag.Literals('watch', ['first-failure', 'until-done']).pipe(
+	Flag.withAlias('w'),
+	Flag.withOptionalValue('first-failure'),
+	Flag.optional
+);
+// --watch => Some('first-failure'); --watch=until-done => Some('until-done')
+// absent => None; in `--watch build`, `build` remains an operand/subcommand.
+
+const validate = Flag.Boolean('validate').pipe(
+	Flag.withDefault(true),
+	Flag.withNegation('skip-validate')
+);
+const unsafe = Flag.Boolean('unsafe').pipe(
+	Flag.withDefault(false),
+	Flag.withoutNegation
+);
+```
+
 ### Prompt Defaults and Themes
 
 <!-- typecheck -->
@@ -248,11 +309,54 @@ builds a complete theme. Local fields override the context theme. Theme fields
 include prompt symbols, `passwordMask`, and ANSI color values. The default
 prefix is `?`; `theme: { prefix: '' }` omits it.
 
+`Prompt.Theme.colors` controls prompt and wizard styling separately from
+`TerminalCapabilities`. By default `makeTheme` enables colors only when stdout
+is a TTY and `NO_COLOR` is unset/empty; the context default detects once.
+Local overrides merge with the context theme. `colors: false` disables styling,
+not cursor/redraw control codes, so it does not make an interactive prompt
+suitable for noninteractive input. Constant fallback prompts defer terminal
+input acquisition and leave piped stdin untouched when no input is needed.
+
 `autoComplete` and `file` now insert `j`/`k` into filter text. Navigate with arrow
 keys (or Ctrl-P/Ctrl-K for up, Ctrl-N for down). Wizard command output redacts
 password prompt values. Completion generators preserve quoted/spaced/Unicode
 choices across Bash (including 3.2), Fish, and Zsh; let the generator escape
 choice values rather than pre-escaping your domain values.
+PowerShell completions are available through `--completions powershell` or
+`--completions pwsh`.
+
+### Terminal output capabilities
+
+`TerminalCapabilities.TerminalCapabilities` is a context reference. Its default
+detects process capabilities on first read; `TerminalCapabilities.layer` instead
+reads `ConfigProvider` and `Stdio`. Built-in help/version/error colors follow
+`canColor` unless an explicit `CliOutput.Formatter` is provided.
+
+- `TERM=dumb` disables color, animation, and prompting.
+- Nonempty `NO_COLOR` wins over `FORCE_COLOR`. Nonempty `FORCE_COLOR` forces
+  colors off-TTY except `0` / case-insensitive `false` (which mean not forcing,
+  not disabling TTY color). Empty variables count as unset.
+- `canAnimate` needs stdout TTY; `canPrompt` needs stdin and stdout TTY. These
+  two are for application code, not automatic prompt/animation enforcement.
+- Provider faults become defects; the detection layer has no typed failure.
+
+<!-- typecheck -->
+```typescript
+import { Effect } from 'effect';
+import { CliOutput, TerminalCapabilities } from 'effect/cli';
+
+const plain = Effect.gen(function* () {
+	return (yield* TerminalCapabilities.TerminalCapabilities).canColor;
+}).pipe(Effect.provideService(TerminalCapabilities.TerminalCapabilities, {
+	canColor: false, canAnimate: false, canPrompt: false
+}));
+
+CliOutput.displayWidth('ファイル'); // 8 terminal cells, not string.length
+CliOutput.displayWidth('1️⃣'); // 2
+```
+
+Use `CliOutput.displayWidth` for terminal-cell layout: it strips ANSI styles,
+measures graphemes, and treats fullwidth/emoji presentation as two cells.
 
 ## Commands
 
@@ -260,6 +364,7 @@ choice values rather than pre-escaping your domain values.
 
 `Command.make` accepts a name, optional config object, and optional handler:
 
+<!-- typecheck -->
 ```typescript
 import { Console, Effect } from 'effect';
 import { Argument, Command, Flag } from 'effect/cli';
@@ -339,6 +444,51 @@ Command.make('deploy', config, handler).pipe(
 ```
 
 `Command.unlisted` keeps a subcommand invocable by exact name while omitting it from parent help output, shell completions, and "did you mean?" suggestions. In Effect v4, this replaces `Command.withHidden`; the command metadata property is `unlisted`. `Flag.withHidden` remains the correct combinator for flags.
+
+Use a `withExamples` callback for commands mounted under different parents.
+Help supplies the actual `commandPath`; the command's `.examples` property
+resolves the callback using only its own name as the path.
+
+<!-- typecheck -->
+```typescript
+import * as Arr from 'effect/Array';
+import { Command } from 'effect/cli';
+
+const deploy = Command.make('deploy').pipe(
+	Command.withExamples(({ commandPath }) => [{
+		command: `${Arr.join(commandPath, ' ')} --yes`,
+		description: 'Take every default'
+	}])
+);
+// deploy.examples[0]?.command === 'deploy --yes'
+```
+
+### Cross-field validation
+
+`Command.validate` runs after parsing, defaults, and fallback prompts, before
+handlers. Return `Effect<void, CliError.CliError, Command.Environment>`; use
+`CliError.ValidationError` for expected cross-field rejection. Validations run
+in composition order and stop at the first failure; `withHandler` retains them.
+Place validation **after** `withSharedFlags` / `withSubcommands` when it must
+cover those compositions. Parent validation then runs for selected subcommands
+with the parent's shared flags. Do not rely on it for transactional business rules.
+
+<!-- typecheck -->
+```typescript
+import { Effect } from 'effect';
+import { CliError, Command, Flag } from 'effect/cli';
+
+const download = Command.make('download', {
+	useApi: Flag.Boolean('use-api').pipe(Flag.withDefault(false)),
+	useDocker: Flag.Boolean('use-docker').pipe(Flag.withDefault(false))
+}, () => Effect.void).pipe(
+	Command.validate(({ useApi, useDocker }) => useApi && useDocker
+		? Effect.fail(new CliError.ValidationError({
+			message: '--use-api and --use-docker are mutually exclusive'
+		}))
+		: Effect.void)
+);
+```
 
 ### Nested Config
 
@@ -515,9 +665,10 @@ Command.provideSync(MyService, (config) => makeMyService(config.env));
 
 `Command.run` is a **pipeable combinator** that reads args from `Stdio`. The resulting effect requires `FileSystem`, `Path`, `Terminal`, `Stdio`, and `ChildProcessSpawner`; provide platform services and execute with the runtime:
 
+<!-- typecheck -->
 ```typescript
-import { NodeRuntime, NodeServices } from '@effect/platform-node';
-import { Effect } from 'effect';
+import { BunRuntime, BunServices } from '@effect/platform-bun';
+import { Console, Effect } from 'effect';
 import { Command, Flag } from 'effect/cli';
 
 const myCommand = Command.make(
@@ -533,10 +684,13 @@ const myCommand = Command.make(
 // Entry point pattern
 myCommand.pipe(
 	Command.run({ version: '1.0.0' }),
-	Effect.provide(NodeServices.layer),
-	NodeRuntime.runMain
+	Effect.provide(BunServices.layer),
+	BunRuntime.runMain
 );
 ```
+
+For Node, replace `BunServices` / `BunRuntime` with `NodeServices` /
+`NodeRuntime` from the matching `@effect/platform-node` release.
 
 Auto-generates `--help` and `--version` flags.
 

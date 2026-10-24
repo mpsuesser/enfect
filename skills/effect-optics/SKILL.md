@@ -7,8 +7,10 @@ You are an Effect TypeScript expert specializing in functional optics for immuta
 
 ## Effect Source Reference
 
-The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Browse and read files there directly to look up APIs, types, and implementations.
+Baseline: **Effect 4.0.6**. The source checkout is at
+`~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
+Read exact-tag files with `git show effect@4.0.6:<path>`; main may be newer.
+The public Optic contracts below are unchanged from 4.0.0.
 
 Key reference files:
 
@@ -45,6 +47,7 @@ Iso > Lens | Prism > Optional
 
 Always begin with `Optic.id<S>()` — the identity Iso on type `S`:
 
+<!-- typecheck -->
 ```ts
 import { Optic } from 'effect';
 
@@ -148,6 +151,7 @@ Calling `notUndefined()` on an `Optional` returns another `Optional`, not a `Pri
 
 Adds Schema validation. `getResult` fails when any check fails; `set` passes through unchanged:
 
+<!-- typecheck -->
 ```ts
 import { Optic, Schema } from 'effect';
 
@@ -170,6 +174,7 @@ const _b = Optic.id<S>().refine((s: S): s is B => s._tag === 'b', {
 
 Available when focus is `ReadonlyArray<A>`. The callback receives an `Iso<A, A>` to drill into each element:
 
+<!-- typecheck -->
 ```ts
 import { Optic, Schema } from 'effect';
 
@@ -185,6 +190,7 @@ _positive.modifyAll((n) => n + 1)({ a: [1, -2, 3] });
 
 ### `.compose(optic)` — Compose with another optic
 
+<!-- typecheck -->
 ```ts
 import { Optic, Option } from 'effect';
 
@@ -234,7 +240,7 @@ inc(state);
 
 // modifyAll (traversal)
 const doubled = _positive.modifyAll((n) => n * 2);
-doubled({ items: [1, -2, 3] }); // { items: [2, -2, 6] }
+doubled({ a: [1, -2, 3] }); // { a: [2, -2, 6] }
 ```
 
 ## Standalone Dual Helpers
@@ -252,6 +258,7 @@ Every derived read/update operation also has a standalone dual function. Use the
 | `Optic.getAll`        | `Optic.getAll(self, traversal)`                 | `Optic.getAll(traversal)(self)`              |
 | `Optic.modifyAll`     | `Optic.modifyAll(self, traversal, f)`           | `Optic.modifyAll(traversal, f)(self)`        |
 
+<!-- typecheck -->
 ```ts
 import { Optic, pipe } from 'effect';
 
@@ -275,7 +282,11 @@ The standalone helpers delegate to the corresponding instance methods. `replace`
 
 For custom optics beyond the builder chain:
 
+<!-- typecheck -->
 ```ts
+import { Optic, Option, Result, Schema, SchemaIssue } from 'effect';
+import * as R from 'effect/Record';
+
 // Iso — lossless two-way conversion
 const fahrenheit = Optic.makeIso<number, number>(
 	(c) => (c * 9) / 5 + 32, // get: Celsius -> Fahrenheit
@@ -289,8 +300,6 @@ const _first = Optic.makeLens<readonly [string, number], string>(
 );
 
 // Prism — focus may not exist, set doesn't need original
-import { Optic, Result, SchemaIssue } from 'effect';
-
 const numeric = Optic.makePrism<string, number>((s) => {
 	const n = Number(s);
 	return Number.isNaN(n)
@@ -307,15 +316,15 @@ const posInt = Optic.fromChecks<number>(
 // Optional — both reading and writing can fail
 const atKey = (key: string) =>
 	Optic.makeOptional<Record<string, number>, number>(
-		(s) =>
-			Object.hasOwn(s, key)
-				? Result.succeed(s[key])
-				: Result.fail(
-						new SchemaIssue.Pointer(
-							[key],
-							new SchemaIssue.MissingKey(undefined)
-						)
-					),
+		(s) => Option.match(R.get(s, key), {
+			onSome: Result.succeed,
+			onNone: () => Result.fail(
+				new SchemaIssue.Pointer(
+					[key],
+					new SchemaIssue.MissingKey(undefined)
+				)
+			)
+		}),
 		(a, s) =>
 			Object.hasOwn(s, key)
 				? Result.succeed({ ...s, [key]: a })
@@ -330,7 +339,11 @@ const atKey = (key: string) =>
 
 Fallible optic operations use `SchemaIssue.Issue`. Custom `makePrism` and `makeOptional` implementations return structured issues. Use `SchemaIssue.makeFormatterDefault()` for human-readable messages:
 
+<!-- typecheck -->
 ```ts
+import { Optic, Result, SchemaIssue } from 'effect';
+
+const _a = Optic.id<{ readonly a?: number }>().at('a').notUndefined();
 const formatIssue = SchemaIssue.makeFormatterDefault();
 const message = Result.match(_a.getResult({}), {
 	onSuccess: (value) => `value: ${value}`,
@@ -357,6 +370,7 @@ Optic.entries<A>(); // Iso<Record<string, A>, ReadonlyArray<readonly [string, A]
 
 Generate optics from Schema definitions with `Schema.toIso`:
 
+<!-- typecheck -->
 ```ts
 import { Schema } from 'effect';
 
@@ -386,6 +400,7 @@ _name.replace('Bob', new Person({ name: 'Alice', age: 30 }));
 
 ### Deep nested update (define once, reuse everywhere)
 
+<!-- typecheck -->
 ```ts
 import { Optic, String } from 'effect';
 
@@ -438,6 +453,7 @@ _circleRadius.replace(10, { _tag: 'Rect', width: 5, height: 3 });
 
 ### Traversal with filtering
 
+<!-- typecheck -->
 ```ts
 import { Optic, Schema } from 'effect';
 
@@ -466,6 +482,7 @@ shout({
 
 ### Record traversal via entries
 
+<!-- typecheck -->
 ```ts
 import { Optic, Schema } from 'effect';
 
@@ -481,6 +498,7 @@ inc({ a: 0, b: 3, c: -1 }); // { a: 0, b: 4, c: -1 }
 
 Use `getResult` to see explicit success/failure:
 
+<!-- typecheck -->
 ```ts
 import { Optic, Result } from 'effect';
 

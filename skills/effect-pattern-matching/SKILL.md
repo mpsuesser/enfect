@@ -9,8 +9,9 @@ Use this skill when working with discriminated unions, ADTs, conditional logic, 
 
 ## Effect Source Reference
 
-The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Browse and read files there directly to look up APIs, types, and implementations.
+Baseline: **Effect 4.0.6**. The source checkout is at
+`~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
+Read exact-tag files with `git show effect@4.0.6:<path>`; main may be newer.
 
 Reference this for:
 
@@ -23,7 +24,7 @@ Reference this for:
 
 **Pattern matching over imperative conditionals**:
 
-- Exhaustive by default (compiler enforces all cases)
+- Exhaustive when finalized with `Match.exhaustive`, schema `.match`, or `$match`
 - Type-safe refinement in each branch
 - Declarative, not imperative
 - Pipeline-friendly composition
@@ -37,6 +38,9 @@ intentional partial matching. Direct `Schema.TaggedUnion` creates canonical
 `_tag` object variants. Both expose data-first and data-last `matchOrElse` forms;
 the `toTaggedUnion` fallback excludes handled variants, while direct
 `Schema.TaggedUnion.matchOrElse` types its fallback as the full union.
+Both expose `.tag` with the chosen discriminator key (`'_tag'` for direct
+`TaggedUnion`). Duplicate discriminants are runtime construction errors, not a
+compile-time uniqueness guarantee in 4.0.6.
 
 <!-- typecheck -->
 ```typescript
@@ -86,13 +90,13 @@ const connected = (address: string): WalletState => ({
 });
 const error = (message: string): WalletState => ({ _tag: 'Error', message });
 
-// No built-in pattern matching
-// No type guards
-// No exhaustiveness checking
+// Constructors alone do not supply reusable matching/guard helpers.
+// TypeScript can still narrow tags and check an explicit exhaustive matcher.
 ```
 
 ### The Solution: Data.TaggedEnum
 
+<!-- typecheck -->
 ```typescript
 // ✅ CORRECT - TaggedEnum with constructors + $match + $is
 import { Data } from 'effect';
@@ -174,7 +178,7 @@ const getUser = (id: string): Effect.Effect<User, NotFound> =>
 const program = Effect.gen(function* () {
 	const result = yield* Effect.result(getUser('123'));
 
-	// Manual tag checking - not exhaustive
+	// This two-case branch does handle both Result variants.
 	if (result._tag === 'Failure') {
 		console.error(`User not found: ${result.failure.id}`);
 		return null;
@@ -186,10 +190,10 @@ const program = Effect.gen(function* () {
 
 **Problems:**
 
-- Not exhaustive (could forget Success case)
+- This branch is valid; a generic fallback could hide newly introduced variants
 - Verbose and imperative
 - Breaks pipeline style
-- Manual unwrapping of Either
+- Manual unwrapping of Result
 
 ### The Solution: Effect.match
 
@@ -222,7 +226,7 @@ const program = getUser('123').pipe(
 
 - Exhaustive (must handle both cases)
 - Declarative and pipeline-friendly
-- No manual Either unwrapping
+- No manual Result unwrapping
 - Type-safe refinement in each branch
 
 ### Effect.match Variants
@@ -297,6 +301,7 @@ const getColor = (status: Status): string => {
 
 ### The Solution: $match
 
+<!-- typecheck -->
 ```typescript
 // ✅ CORRECT - $match with exhaustive checking
 import { Data } from 'effect';
@@ -385,8 +390,9 @@ Use `TaggedEnum.$is` instead of manual `_tag` checks. It only checks `_tag`, so 
 
 ### The Problem: Manual \_tag Checks
 
+<!-- typecheck -->
 ```typescript
-// ❌ WRONG - Manual tag checking
+// Valid narrowing; prefer a reusable guard when the check is repeated.
 import { Data } from 'effect';
 
 type Status = Data.TaggedEnum<{
@@ -401,13 +407,14 @@ if (status._tag === 'Active') {
 	console.log('Active!');
 }
 
-// Hard to use in Array methods
+// TypeScript can infer a narrowing predicate here too.
 const items: Status[] = [Status.Active(), Status.Expired()];
 const activeItems = items.filter((item) => item._tag === 'Active');
 ```
 
 ### The Solution: $is Type Guards
 
+<!-- typecheck -->
 ```typescript
 // ✅ CORRECT - $is for type-safe guards
 import { Data, Array, pipe } from 'effect';
@@ -440,6 +447,7 @@ const activeOrExpired = items.filter(
 
 ### $is in Effect Pipelines
 
+<!-- typecheck -->
 ```typescript
 import { Data, pipe } from 'effect';
 
@@ -485,6 +493,7 @@ if (maybeUser._tag === 'Some') {
 
 ### The Solution: Option.match
 
+<!-- typecheck -->
 ```typescript
 // ✅ CORRECT - Option.match
 import { Option, pipe } from 'effect';
@@ -554,6 +563,7 @@ For Schema-based unions, use `Match.typeTags` for pattern matching.
 
 ### Schema Union Pattern Matching
 
+<!-- typecheck -->
 ```typescript
 import { Schema, Match } from 'effect';
 
@@ -623,6 +633,7 @@ Use `Match.fn(selector)` when a reusable function takes several arguments or sho
 
 Case handlers receive the narrowed selected value first, followed by all original selector arguments:
 
+<!-- typecheck -->
 ```typescript
 import { Match } from 'effect';
 
@@ -649,9 +660,37 @@ formatTodo('Todo', { status: 'Active', title: 'Write tests' });
 
 `Match.exhaustive`, `Match.orElse`, `Match.option`, and `Match.result` all compile a `Match.fn` matcher to a function with the selector's original parameters. Prefer `Match.type<I>()` when the matched value itself is the function's only input; use `Match.fn` when matching one argument, a derived property, or another projection while retaining surrounding arguments.
 
+### Object keys and tuple-prefix patterns in 4.0.6
+
+`when`, `not`, `whenOr`, and `whenAnd` reject object-pattern keys absent from
+every remaining object variant. Numeric keys normalize to string keys for this
+check. It is a top-level typo guard, not recursive exact-object validation;
+functions, refinements, and array patterns are excluded. Runtime matching is
+still partial structural matching, not boundary decoding.
+
+Tuple patterns match a prefix, not an exact array length. With variadic/array
+inputs, required prefix positions narrow while the remaining input is retained.
+Do not use `[]` as an empty-array test: it is an empty prefix.
+
+<!-- typecheck -->
+```typescript
+import { Match } from 'effect';
+
+const prefix = Match.type<ReadonlyArray<string | number>>().pipe(
+	Match.when([Match.string, Match.number], (values) => {
+		const first: string = values[0];
+		const second: number = values[1];
+		return `${first}: ${second}`;
+	}),
+	Match.orElse(() => 'No matching prefix')
+);
+prefix(['item', 2, 'tail']); // 'item: 2'
+```
+
 ## Pattern 8: Loadable.match for Async State
 
-Use `Loadable.match` for async state pattern matching.
+Use an application's `Loadable.match` for async state pattern matching. The
+`@/typeclass/Loadable` below is an illustrative local module, not an Effect export.
 
 ### Loadable Pattern
 
@@ -708,6 +747,7 @@ const processState = (state: State): string =>
 
 ### The Solution: Effect Services
 
+<!-- typecheck -->
 ```typescript
 // ✅ CORRECT - testable with Clock service
 import { Clock, Effect, Data } from 'effect';
@@ -769,6 +809,7 @@ const assignColorTestable = (user: User): Effect.Effect<string> =>
 
 ## Complete Example: Wallet Connection State Machine
 
+<!-- typecheck -->
 ```typescript
 import { Data, Effect, Clock } from 'effect';
 
@@ -859,6 +900,7 @@ Before completing pattern matching implementation:
 
 ### ADT Definition
 
+<!-- typecheck -->
 ```typescript
 import { Data } from 'effect';
 

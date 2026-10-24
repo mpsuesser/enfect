@@ -7,7 +7,9 @@ You are an Effect TypeScript expert specializing in the `Graph` module — build
 
 ## Effect Source Reference
 
-The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read it directly when in doubt — the module is self-contained in a single file.
+Baseline: **Effect 4.0.6**. The source checkout is at
+`~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
+Read exact-tag files with `git show effect@4.0.6:<path>`; main may be newer.
 
 Key files:
 
@@ -43,6 +45,7 @@ Call conventions:
 
 `Graph.directed` and `Graph.undirected` create empty graphs, optionally running an initial mutation callback:
 
+<!-- typecheck -->
 ```ts
 import { Graph } from 'effect';
 
@@ -380,7 +383,11 @@ Sharp edges (all verified in tests):
 
 - `dijkstra` and `astar` validate **every edge weight in the graph eagerly** — any negative or `NaN` cost throws `GraphError` immediately, even when the offending edge is not on the path and even when `source === target`.
 - In **undirected** graphs every edge is traversable in both directions, so a reachable negative edge forms a negative cycle: `bellmanFord` throws when that cycle can affect the target, and `floydWarshall` throws on any negative cycle.
-- `floydWarshall` throws on any negative cycle in directed graphs too; it runs in O(V^3) — fine for hundreds of nodes, not tens of thousands.
+- `floydWarshall` throws on any negative cycle in directed graphs too. Distance
+  computation is O(V³); immutable path witnesses can require O(V³) working
+  storage, in addition to reconstructed paths. It is not a quadratic-storage
+  algorithm. Reconstruction removes repeated nodes and no longer loops on
+  zero-cost cycles after floating-point rounding.
 - With parallel edges, `floydWarshall` uses the minimum weight between a pair.
 
 `Graph.simplePaths(graph, { source, target, limit? })` lazily enumerates loop-free paths in DFS edge order with hop count as `distance`. `Graph.allShortestPaths(graph, { source, target, cost, limit? })` lazily enumerates every simple minimum-cost path; parallel edges remain distinct. Both return repeatable `PathWalker` values, can be exponentially large, and should normally receive a finite `limit`.
@@ -442,6 +449,7 @@ const mermaid = Graph.toMermaid(dag, {
 
 `findNode` is O(n), so keep your own key-to-index map while building:
 
+<!-- typecheck -->
 ```ts
 import { Graph } from 'effect';
 
@@ -469,7 +477,7 @@ const tasks = Graph.directed<Task, void>((m) => {
 });
 
 if (!Graph.isAcyclic(tasks)) {
-	// Diagnose: every SCC with more than one node is a dependency cycle
+	// Diagnose multi-node cycles; check self-loops separately if allowed.
 	const cycles = Graph.stronglyConnectedComponents(tasks).filter(
 		(scc) => scc.length > 1
 	);
@@ -484,16 +492,25 @@ const executionOrder = Array.from(
 
 ### Reachability and impact analysis
 
+Continue with `tasks` and `byName` from the example above:
+
 ```ts
+import { Option } from 'effect';
+
 // Everything DOWNSTREAM of a node (what breaks if it changes):
 const impacted = new Set(
-	Graph.indices(Graph.dfs(tasks, { start: [byName.get('compile')!] }))
+	Graph.indices(Graph.dfs(tasks, {
+		start: Option.toArray(Option.fromNullishOr(byName.get('compile')))
+	}))
 );
 
 // Everything UPSTREAM of a node (its transitive prerequisites):
 const prerequisites = new Set(
 	Graph.indices(
-		Graph.dfs(tasks, { start: [byName.get('release')!], direction: 'incoming' })
+		Graph.dfs(tasks, {
+			start: Option.toArray(Option.fromNullishOr(byName.get('release'))),
+			direction: 'incoming'
+		})
 	)
 );
 
@@ -502,8 +519,13 @@ const roots = Array.from(Graph.indices(Graph.externals(tasks, { direction: 'inco
 const leaves = Array.from(Graph.indices(Graph.externals(tasks, { direction: 'outgoing' })));
 ```
 
+These lookups intentionally yield an empty traversal when a name is absent.
+If a missing task is an error, handle the `None` branch with a typed failure
+before constructing the traversal instead.
+
 ### Weighted routing with fallback
 
+<!-- typecheck -->
 ```ts
 import { Graph, Option } from 'effect';
 
@@ -530,14 +552,20 @@ const route = (
 
 Graph operations throw `GraphError` synchronously. Inside effectful code, capture them with `Effect.try` (the thrown value already is a tagged error; see the effect-error-handling skill for the broader strategy):
 
+<!-- typecheck -->
 ```ts
 import { Effect, Graph } from 'effect';
 
-const topoOrder = (g: Graph.DirectedGraph<string, number>) =>
+const topoOrder = Effect.fn('Graph.topoOrder')((g: Graph.DirectedGraph<string, number>) =>
 	Effect.try({
 		try: () => Array.from(Graph.indices(Graph.topo(g))),
-		catch: (error) => error as Graph.GraphError
-	});
+		catch: (error) => error
+	}).pipe(
+		Effect.catch((error) => error instanceof Graph.GraphError
+			? Effect.fail(error)
+			: Effect.die(error))
+	)
+);
 // Effect<Array<Graph.NodeIndex>, Graph.GraphError>
 ```
 

@@ -13,7 +13,8 @@ and `effect-typeclass-design` for reusable predicate/order APIs.
 
 ## Source Reference
 
-Baseline: **Effect 4.0.0**. In the Effect source reference, consult
+Baseline: **Effect 4.0.6**. In the Effect source reference, read exact-tag files
+with `git show effect@4.0.6:<path>`; main may be newer. Consult
 `packages/effect/SCHEMA.md` and `packages/effect/src/{Schema,Match,DateTime,Order}.ts`.
 Verify the installed version and source tag before applying newer APIs.
 
@@ -173,6 +174,11 @@ message. Never claim the invariant is enforced solely because fields use
 - TypeScript does narrow literal discriminator checks. The preference for schema
   matching is about exhaustiveness and reuse, not a compiler limitation.
 
+Both schema union forms expose `.tag` with their discriminator key. Duplicate
+discriminants are rejected at runtime, including nested unions and numeric/string
+collisions (`1` and `'1'`). Effect 4.0.6 has no compile-time uniqueness guarantee;
+the temporary 4.0.5 restriction was removed.
+
 ## Guards, Optionality, and Defaults
 
 `Schema.is` checks the decoded side and does not perform transformations. Decode
@@ -232,7 +238,7 @@ see `effect-schema-composition` for transformation and recursion details.
 
 - Export the model, its boundary decoder, useful guards, and meaningful domain
   operations. Avoid boilerplate exports that add no domain vocabulary.
-- Use `Schema.toEquivalence` for model comparisons. `Eq.equals` provides general
+- Use `Schema.toEquivalence` for model comparisons. `Equal.equals` provides general
   structural equality in v4, but schema equivalence expresses model intent.
 - Compose `Order.mapInput` / `Order.combine` and sort with `Arr.sort`. Finite
   `Arr.groupBy` / `Iterable.groupBy` preserve finite keys, with optional

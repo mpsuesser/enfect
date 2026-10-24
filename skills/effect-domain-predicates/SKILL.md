@@ -9,8 +9,9 @@ Generate complete sets of predicates and Order instances for domain types, deriv
 
 ## Effect Source Reference
 
-The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Browse and read files there directly to look up APIs, types, and implementations.
+Baseline: **Effect 4.0.6**. The source checkout is at
+`~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
+Read exact-tag files with `git show effect@4.0.6:<path>`; main may be newer.
 
 Reference this for:
 
@@ -51,25 +52,29 @@ Equal.equals(task1, task2); // true - deep structural equality
 
 When you need an `Equivalence` instance (for use with combinators), derive it from the schema:
 
+<!-- typecheck -->
 ```typescript
-import { Schema, Array } from 'effect';
-import * as Equivalence from 'effect/Equivalence';
+import * as Arr from 'effect/Array';
+import * as Schema from 'effect/Schema';
 
 class Task extends Schema.Class<Task>('Task')({ id: Schema.String }) {}
 
-// Derive from schema (structural equality)
+/** Structural task equality derived from the domain schema. */
 export const TaskEquivalence = Schema.toEquivalence(Task);
 
-declare const tasks: Array<Task>;
+declare const tasks: ReadonlyArray<Task>;
+declare const searchTask: Task;
 
 // Usage with combinators
-const uniqueTasks = Array.dedupeWith(tasks, TaskEquivalence);
+const uniqueTasks = Arr.dedupeWith(tasks, TaskEquivalence);
+const hasTask = Arr.containsWith(TaskEquivalence)(tasks, searchTask);
 ```
 
 ## Pattern: Field-Based Equivalence with Equivalence.mapInput
 
 Compare by specific fields using `Equivalence.mapInput`:
 
+<!-- typecheck -->
 ```typescript
 import { DateTime } from 'effect';
 import * as Equivalence from 'effect/Equivalence';
@@ -181,9 +186,32 @@ export const EquivalenceComplete = Equivalence.combineAll([
 - All must match for equivalence (AND logic)
 - Order doesn't matter (unlike Order.combine)
 
+`combineAll` materializes its iterable once at construction, so supply a finite
+iterable. Repeated comparisons work even with a one-shot iterator; empty criteria
+always return `true`. This does not repair unlawful component equivalences.
+
+<!-- typecheck -->
+```typescript
+import * as Equivalence from 'effect/Equivalence';
+
+const criteria = (function* () {
+	yield Equivalence.String;
+})();
+const equivalent = Equivalence.combineAll(criteria);
+equivalent('a', 'b'); // false
+equivalent('a', 'b'); // false again, not vacuously true after iterator exhaustion
+```
+
 ## Pattern: Typeclass-Derived Predicates
 
 When a domain type implements a typeclass, re-export all relevant predicates:
+
+`Schedulable$`, `Durable$`, and `@/schemas/...` below are illustrative
+application modules, not Effect exports. Define their semantics locally (see
+`effect-typeclass-design`). Calendar predicates need an explicit time zone and
+reference instant; obtain current time effectfully rather than hiding a clock
+inside a pure predicate. Name strict `isMoreThan` / `isLessThan` predicates as
+strict bounds, not inclusive minimum/maximum guarantees.
 
 ```typescript
 import { DateTime, Duration, Schema } from 'effect';
@@ -298,6 +326,7 @@ export const hasExactDuration = Durable$.hasExactDuration(Durable);
 
 Compose orders from simpler base orders using `Order.mapInput`:
 
+<!-- typecheck -->
 ```typescript
 import { DateTime } from 'effect';
 import * as Order from 'effect/Order';
@@ -567,7 +596,7 @@ const uniqueById = Array.dedupeWith(tasks, Task.EquivalenceById);
 const uniqueByTagAndId = Array.dedupeWith(tasks, Task.EquivalenceByTagAndId);
 
 // Find if array contains equivalent task
-const hasTask = Array.containsWith(tasks, Task.EquivalenceById)(searchTask);
+const hasTask = Array.containsWith(Task.EquivalenceById)(tasks, searchTask);
 ```
 
 ### Filtering Examples
@@ -803,6 +832,7 @@ const uniqueTasks = Array.dedupeWith(tasks, Equivalence);
 
 **3. Equivalence.mapInput for Field-Based**
 
+<!-- typecheck -->
 ```typescript
 import * as Equivalence from 'effect/Equivalence';
 
@@ -837,6 +867,7 @@ const EquivalenceCombined = Equivalence.combine(
 
 **5. Order.mapInput for Field-Based Sorting**
 
+<!-- typecheck -->
 ```typescript
 import * as Order from 'effect/Order';
 
