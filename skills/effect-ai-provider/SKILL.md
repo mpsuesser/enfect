@@ -7,12 +7,12 @@ description: Configure and compose AI provider layers using @effect/ai packages.
 
 Configure AI provider layers for language model integration using Effect's AI ecosystem.
 
-Baseline: `effect@4.0.0`; inspect the matching tag in the Effect source reference.
+Baseline: `effect@4.0.6`; inspect the matching tag in the Effect source reference.
 Keep `effect` and every `@effect/*` package on the same version. Core AI APIs and
 provider clients, models, and generated schemas carry `@stability unstable`:
 minor releases may include breaking changes, even with `effect/ai` import paths.
 
-For TypeSafe/Jev and OpenRouter **decision-model** layers, use
+For TypeSafe/Jev, OpenRouter, OpenAI, and Cloudflare **decision-model** layers, use
 `effect-ai-decision-model`; its provider contracts differ from language models.
 
 ## When to Use This Skill
@@ -123,6 +123,26 @@ const AnthropicLive = AnthropicLanguageModel.layer({
 
 Anthropic capability detection preserves the lower output limits and structured-output support of known legacy Claude models. Unknown and newly released model identifiers default to modern capabilities: native structured outputs and `128_000` output tokens. Override capability detection with `structuredOutputs: false` (or `true`) when a model or compatible endpoint differs from that default; set `max_tokens` separately when the provider's output limit differs.
 
+The service's optional `supportsSystemMessagesInHistory: Effect<boolean>` reports
+effective support in the **request context**, respecting
+`midConversationSystemMessages` overrides. Unknown models default to modern
+support; known older models retain their restrictions. Set the override to false
+for gateways that require top-level instructions. Absence of this capability on
+another provider means unknown, not false.
+
+All system instructions are preserved. Inline system blocks have placement
+restrictions; when the prompt cannot satisfy them, the adapter sends all system
+instructions top-level in order rather than dropping later instructions.
+Anthropic cache metadata is `anthropic.cacheControl` on Prompt parts/messages,
+not `cache_control`. Assistant-message breakpoints use the last eligible
+non-thinking block; explicit part-level options take precedence.
+
+Provider fallback content blocks are exposed as `response-metadata` with
+`metadata.anthropic.fallback` and the fallback `modelId`, for both generation and
+streaming. Anthropic usage now reports total input including uncached input,
+cache reads, and cache writes; use shared `usage.inputTokens.cacheRead` /
+`cacheWrite` rather than counting cache tokens twice.
+
 Anthropic-compatible gateways may omit `usage.inference_geo`. Malformed gateway
 4xx error bodies are classified by HTTP status (including 429 retry delays), not
 as `InvalidOutputError`. Direct `client.betaMessagesPost` calls expose
@@ -169,6 +189,23 @@ For WebSocket turns, `previous_response_not_found` triggers a retry with the ful
 prompt. An open socket is retained; custom adapters can inspect
 `ProviderOptions.incrementalFallback` to recognize the full-prompt retry.
 
+### Reasoning detection and cache configuration
+
+Unknown OpenAI model IDs default to reasoning-capable. Non-reasoning families
+include `gpt-3*`, `gpt-4*`, `chatgpt-*`, `chat-latest`, and versioned
+`gpt-<version>-chat*`; fine-tunes follow their base model. Set
+`reasoningModel: false` for compatible endpoints that should not get developer
+roles or automatic `reasoning.encrypted_content` inclusion. Explicit `include`
+entries are preserved and merged without duplicates; opting out of the automatic
+include does not remove an explicitly requested entry.
+
+Config supports `safety_identifier`, `prompt_cache_retention`, and
+`prompt_cache_options.comparison_response_id`. Prompt cache breakpoints now work
+on text, images, and files as well as system messages. Cache diagnostics appear
+in finish metadata; inspect them instead of assuming a breakpoint caused a hit.
+The service-tier schema also accepts `ultrafast`; availability remains a provider
+contract, not a guarantee from the type union.
+
 ```typescript
 const client = yield* OpenAiClient.OpenAiClient;
 const [body] = yield* client.createResponse({
@@ -195,7 +232,8 @@ const NativeTools = Toolkit.make(
 Available hosted/provider tools include `WebSearch`, `CodeInterpreter`, `FileSearch`, `ImageGeneration`, and `Mcp` (`customName: "OpenAiMcp"`). MCP tool approval requests/results use this canonical `OpenAiMcp` name and the normal Effect AI approval request/response parts. Handler-required local tools such as `Shell`, `LocalShell`, and `ApplyPatch` run in your environment; provide handlers only behind explicit sandboxing, authorization, and audit policy.
 
 Web-search calls may omit `action`. Narrow that optional field before reading
-action details; incomplete calls are preserved as failed tool results.
+action details; incomplete calls are preserved as failed tool results. A `find`
+action may also omit `pattern` or `url`; check each field before using it.
 
 ## OpenAI-Compatible Providers
 
@@ -204,6 +242,15 @@ For Chat Completions-compatible endpoints use `@effect/ai-openai-compat`
 (`OpenAiClient`, `OpenAiLanguageModel`), which preserves non-null text/tool
 argument fragments when other streamed delta fields are null. Both adapters
 preserve raw JSON Schema dynamic-tool arguments.
+
+OpenAI-Compat uses the **`'openai-compat'`** key for Prompt options, Response
+metadata, and error metadata, not `openai`. Migrate persisted metadata consumers
+and manual Prompt construction accordingly. Assistant replay preserves reasoning,
+text, and tool calls; reasoning metadata's `reasoningField` selects `reasoning`
+or `reasoning_content` (default), while tool-call `extraContent` preserves provider
+thought signatures. Keep these fields when folding response parts into history.
+Responses-only `store` and `conversation` options have been removed from the
+Chat Completions config surface.
 
 ```typescript
 import { OpenAiClient, OpenAiConfig } from '@effect/ai-openai';
@@ -242,6 +289,23 @@ const OpenRouterClientLayer = OpenRouterClient.layerConfig({
 // model() constructor — use provider-prefixed model IDs
 const routerModel = OpenRouterLanguageModel.model('anthropic/claude-sonnet-4');
 ```
+
+`.model()` now correctly carries provider metadata/type `'openrouter'`, not
+`'openai'`. Update code that inspected `Model.ProviderName` or annotated the old
+literal type. For schema-backed structured output, `strictJsonSchema` defaults
+to true only for model prefixes selecting the OpenAI schema transformer:
+`openai/`, `gpt-`, `o1-`, `o3-`, and `o4-`. Other models send `strict: null`.
+Explicit true/false overrides either default; transformer selection is **not**
+an endpoint-capability check and this setting does not control tool strictness.
+Assistant text and tool results preserve `openrouter.cacheControl` during replay.
+
+### Manual tool-call validation
+
+Anthropic, OpenAI, and OpenAI-Compat honor `toolCallValidation: 'deferred'` when
+`disableToolCallResolution: true`. They can then return unknown params and
+undeclared tool names for caller-owned validation, including toolkit-free calls.
+Provider-executed calls remain validated. Do not assume another compatible
+endpoint/adapter implements the same behavior; see `effect-ai-language-model`.
 
 ## ExecutionPlan (Multi-Provider Fallback)
 
@@ -375,7 +439,7 @@ const result2 =
 	);
 ```
 
-`OpenAiLanguageModel.Config` accepts Responses API request fields plus `fileIdPrefixes`, `text.verbosity`, restored `reasoning` config, and `strictJsonSchema`. Do not manually send library-only fields (`fileIdPrefixes`, `strictJsonSchema`) to OpenAI APIs; the language model strips them before request construction.
+`OpenAiLanguageModel.Config` accepts Responses API request fields plus `fileIdPrefixes`, `text.verbosity`, restored `reasoning` config, `reasoningModel`, and `strictJsonSchema`. Do not manually send library-only fields (`fileIdPrefixes`, `reasoningModel`, `strictJsonSchema`) to OpenAI APIs; the language model strips them before request construction.
 
 Reasoning effort also accepts `'max'` for OpenAI-compatible providers that expose that level, in addition to the standard OpenAI effort values.
 
@@ -454,6 +518,12 @@ authors; inspect its signature before building custom provider mappings.
 Authentication failures generally require corrected credentials/permissions,
 not a blanket transient retry. Keep redacted credentials out of logs.
 
+Malformed provider envelopes and SSE schema failures now use nonretryable
+`InvalidResponseError`, with optional HTTP context. This differs from retryable
+`InvalidOutputError` for decoded model output. Do not retry malformed wire data
+just because earlier versions reported it as output validation. Exact 4.0.6
+contains this reason despite an upstream `@since 4.1.0` annotation.
+
 OpenAI Responses additionally supports GPT-5.6+ explicit prompt cache breakpoints
 through `Prompt` metadata and `prompt_cache_options` model config; see
 `effect-ai-prompt` for the complete construction example.
@@ -488,6 +558,24 @@ export class MyAiError extends Schema.TaggedError<MyAiError>()(
 | `@effect/ai-openrouter` | OpenRouter    | Multi-provider proxy (any model ID)             |
 
 **Note**: There are no `@effect/ai-google` or `@effect/ai-amazon-bedrock` packages. Use OpenRouter to access Google/Bedrock models.
+
+## Telemetry contracts
+
+AI generation spans use client span kind. `Telemetry` now uses
+`provider: { name }` / `gen_ai.provider.name`, not `system` /
+`gen_ai.system`. Removed exports include `BaseAttributes`, `WellKnownSystem`,
+`TokenAttributes`, `AllAttributes`, and OpenAI's `WellKnownResponseFormat`;
+the old `token` and OpenAI `responseFormat` attribute shapes are gone too.
+Use `ProviderAttributes` / `WellKnownProviderName` and `OutputAttributes` /
+`WellKnownOutputType`; `output: { type }` emits `gen_ai.output.type` (`text`,
+`json`, `image`, or `speech`). Provider names also changed, for example
+`az.ai.*` → `azure.ai.*` and `gemini` → `gcp.gemini`.
+Inspect the exact tagged `Telemetry.ts` / `OpenAiTelemetry.ts` before updating
+custom instrumentation rather than casting an old attribute record.
+
+Core attributes include `effect.ai.concurrency`, `effect.ai.tool_choice`, and
+`effect.ai.object_name`; OpenAI-specific attributes use `openai.*` instead of
+the old `gen_ai.openai.*` namespace. Update dashboards/queries as well as source.
 
 ## Complete Working Example
 
@@ -718,6 +806,8 @@ OpenAI web-search sources are a discriminated union: narrow `type` before readin
 
 - `packages/ai/anthropic/src/AnthropicLanguageModel.ts`
 - `packages/ai/openai/src/OpenAiLanguageModel.ts`
+- `packages/ai/openai-compat/src/OpenAiLanguageModel.ts`
 - `packages/ai/openrouter/src/OpenRouterLanguageModel.ts`
+- `packages/effect/src/ai/{AiError,Telemetry}.ts` and provider telemetry modules
 - `ai-docs/src/71_ai/10_language-model.ts`
 - `ai-docs/src/71_ai/30_chat.ts`

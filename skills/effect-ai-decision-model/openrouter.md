@@ -1,6 +1,6 @@
 # OpenRouter decision adapter
 
-Baseline: `@effect/ai-openrouter@4.0.0`, aligned with `effect`. This adapter calls
+Baseline: `@effect/ai-openrouter@4.0.6`, aligned with `effect`. This adapter calls
 OpenRouter's **alpha Decisions API**, not chat completions.
 
 `OpenRouterDecisionModel.make({ model, config? })` returns
@@ -55,16 +55,21 @@ const configured = decision.pipe(
   `/alpha/decisions`, preserving proxy prefixes.
 - Encoded state must be a string, object, or array; scalar null/number/boolean
   fails locally with `AiError` reason `InvalidUserInputError`.
-- Choice/Score **must include full distributions** for the high-level adapter;
-  missing distributions fail with `InvalidOutputError` even if a wire response
-  otherwise decodes. Score index keys map to criteria strings. The adapter uses
-  two-decimal probability normalization and common core answer validation.
-- For response ID, cost, provider metadata, or HTTP response details, yield
+- Structured instructions and descriptions pass through. Score questions send
+  each ordered criterion's description; index probabilities map back to labels.
+- Choice/Score missing distributions pass to core validation: `decideSettled`
+  reports `NoDistribution` for an otherwise valid answer, while strict `decide`
+  fails with `InvalidOutputError`. The adapter uses two-decimal probability
+  normalization and common core answer validation.
+- High-level responses retain `id`, `modelId`, and
+  `metadata.openrouter.{cost?, provider?}` alongside usage and answers/outcomes.
+  For HTTP response details or wire-level access, yield
   `OpenRouterClient.OpenRouterClient` and call `createDecisions(request)`. It
   returns `[decodedBody, HttpClientResponse]` with `AiError` failures. Its schemas
   are `OpenRouterSchema.DecisionsRequest`, `DecisionsQuestion`, and
-  `DecisionsResponse`. High-level `decide` projects only answers and token usage.
+  `DecisionsResponse`. Preserve optional metadata rather than fabricating cost or
+  serving-provider values when absent.
 
 Pinned source: `packages/ai/openrouter/src/{OpenRouterDecisionModel,OpenRouterClient,OpenRouterConfig,OpenRouterSchema}.ts`
-at `effect@4.0.0`; corresponding `test/OpenRouterDecisionModel.test.ts` and
+at `effect@4.0.6`; corresponding `test/OpenRouterDecisionModel.test.ts` and
 `typetest/OpenRouterDecisionModel.tst.ts` cover adapter behavior and configuration.

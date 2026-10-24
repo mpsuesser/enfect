@@ -5,7 +5,7 @@ description: Master Effect AI streaming response patterns including start/delta/
 
 # Effect AI Streaming
 
-Baseline: `effect@4.0.0`; inspect that tag in the Effect source reference.
+Baseline: `effect@4.0.6`; inspect that tag in the Effect source reference.
 The `effect/ai` APIs remain `@stability unstable` despite their shorter import
 paths and may break in minor releases. Align provider package versions with `effect`.
 
@@ -211,6 +211,13 @@ Why checkpoint-based merging:
 - Enables atomic history updates via SubscriptionRef
 - Ensures `Prompt.fromResponseParts` sees matching start/delta/end parts for each `id`
 
+The fold preserves text/reasoning start order when their ends arrive out of
+order. Nonempty partial text is retained without an end marker; unended reasoning
+is dropped because its replay metadata may be incomplete. This makes interrupted
+stream history intentionally different from a completed response. The examples
+above retain all parts and repeatedly fold them; for long streams, measure memory
+and fold cost rather than assuming incremental UI updates imply bounded storage.
+
 ## Tool Streaming, Finish, and Approvals
 
 - With automatic framework tool resolution enabled, `finish` is deferred until tool handler streams complete so emitted tool results appear before finish.
@@ -224,6 +231,30 @@ Why checkpoint-based merging:
 - Manual `Toolkit.handle` execution requires handler services on both the outer
   Effect and its returned Stream. Even return-mode streams can fail with
   `AiError` during result encoding; keep that error channel when composing streams.
+
+### Tool-stream lifetime and backpressure
+
+Closing a `Toolkit.handle` result stream interrupts its handler, including early
+termination such as `Stream.take`. Always consume or close returned streams;
+detaching a producer without a consumer is not a safe background-task API.
+
+`Toolkit.PreliminaryBuffer` defaults to `'unbounded'`. Provide a positive integer
+around `handle` to bound its per-call preliminary-result queue; `context.preliminary`
+suspends once the queue fills. Invalid values defect. Consume while the handler
+runs: waiting for producer completion before reading can deadlock. This is not an
+end-to-end memory limit for `LanguageModel`, which transfers results into its own
+buffers. The export is present in exact 4.0.6 despite an upstream `@since 4.1.0`
+annotation. See `effect-ai-tool` for a standalone bounded-consumption example.
+
+For manual model streaming, disabled resolution defaults to strict encoded
+params. Add `toolCallValidation: 'deferred'` only when the consumer will validate
+unknown params and arbitrary names before dispatch. Provider-executed calls
+remain validated. `Response.StreamPart()` without a toolkit can decode persisted
+parts for any tool name; `Response.StreamPart(Toolkit.empty)` is restrictive.
+
+Provider envelope/SSE decoding failures use nonretryable `InvalidResponseError`,
+distinct from retryable `InvalidOutputError` for decoded model output. Keep
+stream failures separate from explicit `{ type: 'error' }` parts in consumer policy.
 
 ## Complete Example
 

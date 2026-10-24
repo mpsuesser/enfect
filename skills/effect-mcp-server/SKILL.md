@@ -8,7 +8,7 @@ You are an Effect TypeScript expert specializing in building MCP (Model Context 
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Inspect `git show effect@4.0.0:<path>` in that checkout for this baseline; main
+Inspect `git show effect@4.0.6:<path>` in that checkout for this baseline; main
 may be ahead. Keep Effect-family package versions aligned. The MCP/AI APIs remain
 `@stability unstable` and can change incompatibly in minor releases.
 
@@ -81,6 +81,11 @@ const protocols = [
 
 Each part layer has type `Layer.Layer<never, never, ...>` — they register themselves with the McpServer service and produce no output type.
 
+For HTTP requests without a protocol header, an existing session's negotiated
+revision is used, not the first configured revision. Invalid version/session
+requests return JSON-RPC error bodies. Keep missing headers distinct from an
+explicitly unsupported revision.
+
 ## Tools and Toolkit
 
 Server options accept `instructions` for initialization/discovery. Prompt
@@ -97,6 +102,10 @@ Parameters must encode to a JSON Schema with `type: 'object'` at the root. Use
 parameterless tools. Identified object schemas are supported: the adapter inlines
 top-level references for input/output schemas and form elicitation, retaining
 referenced definitions. It does not turn primitive result types into objects.
+
+Nonrecursive named roots are no longer duplicated in `$defs` after inlining;
+recursive definitions are retained. Do not construct custom root-relative `$ref`
+paths into a duplicate root definition that may now be absent.
 
 Tool failure projection depends on the negotiated protocol:
 
@@ -205,6 +214,12 @@ const ToolkitLayer = McpServer.toolkit(MyToolkit).pipe(
 
 The pattern is always: `McpServer.toolkit(tk).pipe(Layer.provideMerge(tk.toLayer({...})))`.
 
+Registration tracks `Tool.HandlerServices<Tools[keyof Tools]>`, including
+parameter-decoding and result-encoding services, not just explicitly declared
+tool dependencies. Provide these services as well as the handler layer.
+Request context services are supplied by the transport and excluded from the
+registration layer's external requirements.
+
 ### MCP Tool Annotations
 
 Effect tool annotations are emitted as MCP tool hints:
@@ -263,6 +278,11 @@ Key points:
 - `content` receives `(uri, ...params)` — the full URI string followed by decoded parameter values
 - `audience` can be `["assistant"]`, `["user"]`, or `["assistant", "user"]`
 
+Resource-template requirements include both parameter decoding **and encoding**,
+content services, and completion services. Completion handlers may accept a
+second `CompletionContext` argument; `CompletionServices` includes requirements
+from optional handlers too. Do not erase these requirements with assertions.
+
 ## Prompts
 
 Define reusable prompt templates:
@@ -293,6 +313,11 @@ const AnalysisPrompt = McpServer.prompt({
 - `completion` provides auto-complete values per parameter
 - `content` receives the decoded parameters and returns `Effect<string | Array<PromptMessage>>`
 
+Prompt registration likewise propagates parameter decoding, encoding for
+parameters with completions, and completion-handler requirements in addition to
+content services. Reuse the inferred layer type instead of annotating away
+service-dependent codecs.
+
 ## Elicitation
 
 `McpServer.elicit` requests form-based structured input from the current client and decodes accepted content:
@@ -310,7 +335,7 @@ const result = McpServer.elicit({
 );
 ```
 
-- Returns `Effect<S["Type"], ElicitationDeclined, McpServerClient>`
+- Returns `Effect<S["Type"], ElicitationDeclined, McpServerClient | S["DecodingServices"]>`
 - Handle `ElicitationDeclined` with `catchTag` for fallback behavior
 - If the user cancels, the effect is interrupted
 - Identified object schemas (including named `Schema.Class` values) are accepted;
@@ -435,6 +460,54 @@ McpServer.layerHttp({
 - For stateful revisions, non-`initialize` HTTP requests with no session id return
   `400`; an unknown `Mcp-Session-Id` returns `404`. Keep and resend the session id
   from initialization. The 2026-07-28 stateless adapter uses request metadata instead.
+- `allowSessionTermination: true` enables DELETE for stateful sessions. Successful
+  termination returns `204`, interrupts active requests, and later use of the
+  session ID returns `404`. Disabled or stateless-only endpoints return `405`.
+- `allowSubscriptions: false` disables modern subscriptions and discovery
+  `listChanged` support; the current request's progress/log notifications still
+  work. This is independent of session termination.
+- A POST whose reply-bearing calls were all canceled returns empty `200` SSE;
+  another unexpectedly response-less POST is an internal `500`, not that same
+  cancellation outcome.
+
+### Request-scoped HTTP for serverless hosts
+
+Use `layerHttpRequestScoped` when server execution must belong to an HTTP
+request, for example on Workers. It takes only stateless protocol adapters
+(currently `v2026_07_28`); a stateful adapter is a type error, or an
+`IllegalArgumentError` for untyped input. Its options include server metadata,
+`path`, `protocols`, `extensions`, and `allowedOrigins`, but not the long-lived
+transport's session/subscription toggles.
+
+Each POST owns execution through response-body completion. Registration is
+shared, but request services take precedence over captured layer services. Tools,
+resources, prompts, completions, multi-round input requests, and request-local
+progress/logs work. Legacy reverse `elicit`, subscriptions, broadcasts, and
+DELETE do not; discovery advertises `listChanged: false`. Use `layerHttp` on a
+long-lived host when those features or sessions are required.
+
+<!-- typecheck -->
+```ts
+import { McpProtocol, McpServer, Tool, Toolkit } from 'effect/ai';
+import * as Effect from 'effect/Effect';
+import * as Layer from 'effect/Layer';
+import * as Schema from 'effect/Schema';
+
+const Tools = Toolkit.make(Tool.make('Greet', {
+  parameters: Schema.Struct({ name: Schema.String }),
+  success: Schema.String
+}));
+const Endpoint = McpServer.toolkit(Tools).pipe(
+  Layer.provideMerge(Tools.toLayer({ Greet: ({ name }) => Effect.succeed(`Hello, ${name}`) })),
+  Layer.provide(McpServer.layerHttpRequestScoped({
+    name: 'Greetings',
+    version: '1.0.0',
+    path: '/mcp',
+    protocols: [McpProtocol.v2026_07_28]
+  }))
+);
+// Provide Endpoint to the host's HttpRouter composition; do not launch a daemon per request.
+```
 
 ### Type signatures
 
@@ -444,6 +517,7 @@ layerStdio: (options: {
 	name: string;
 	version: string;
 	description?: string;
+	instructions?: string;
 	websiteUrl?: string;
 	icons?: ReadonlyArray<McpSchema.Icon>;
 	protocols: readonly [McpProtocol.ProtocolAdapter, ...Array<McpProtocol.ProtocolAdapter>];
@@ -456,11 +530,14 @@ layerHttp: (options: {
 	version: string;
 	path: HttpRouter.PathInput;
 	description?: string;
+	instructions?: string;
 	websiteUrl?: string;
 	icons?: ReadonlyArray<McpSchema.Icon>;
 	protocols: readonly [McpProtocol.ProtocolAdapter, ...Array<McpProtocol.ProtocolAdapter>];
 	extensions?: NonNullable<typeof McpSchema.ServerCapabilities.Type['extensions']>;
 	allowedOrigins?: ReadonlyArray<string>;
+	allowSessionTermination?: boolean;
+	allowSubscriptions?: boolean;
 }) => Layer.Layer<McpServer.McpServer | McpSchema.McpServerClient, Cause.IllegalArgumentError, HttpRouter.HttpRouter>;
 ```
 
@@ -512,6 +589,27 @@ const WorkspaceResource = Layer.effectDiscard(
 ## Relationship to OpenAI MCP Tools
 
 `McpServer` exposes a server that MCP clients connect to over stdio or HTTP. `OpenAiTool.Mcp` is different: it is an OpenAI provider-defined tool that lets an OpenAI model call a remote MCP server. When using OpenAI's hosted MCP integration, use the canonical `OpenAiMcp` custom name from `OpenAiTool.Mcp` and handle provider approval flow through normal tool approval request/response parts.
+
+For your application to connect directly instead, 4.0.6 adds experimental
+`effect/ai/McpClient` and `McpClientError`. The client supports `2025-11-25` and
+`2026-07-28` over stdio/HTTP with an explicit revision and scoped lifetime;
+`McpClient.toolkit(client, prefix?)` bridges discovered tools into an Effect AI
+toolkit. This is not the server's scoped reverse-client facade. Read the tagged
+client source before choosing transport/initialization options, and enforce local
+authorization for discovered remote capabilities.
+
+## JSON boundaries
+
+MCP metadata/capability records now check object shape shallowly and expose
+unknown values (`Readonly<Record<string, unknown>>`) rather than promising
+recursive `Schema.Json` validation. Modern `structuredContent` can be unknown
+at the schema boundary. Decode method/domain payloads explicitly; shallow
+acceptance does not make arbitrary values JSON-serializable. Server tool-result
+serialization still rejects non-JSON output.
+
+`McpSchema.JsonRpcRequest`, `JsonRpcNotification`, `JsonRpcResponse`, and
+`JsonRpcMessage` validate envelopes, not arbitrary method payloads: `params`,
+`result`, and error `data` need their own schema decoding.
 
 ## Complete Example — stdio Server
 

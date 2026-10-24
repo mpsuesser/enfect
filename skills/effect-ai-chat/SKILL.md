@@ -8,7 +8,7 @@ You are an Effect TypeScript expert specializing in the `Chat` module for statef
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Use `git show effect@4.0.0:<path>` in that checkout for this skill's baseline;
+Use `git show effect@4.0.6:<path>` in that checkout for this skill's baseline;
 main may be ahead. Keep `effect` and `@effect/*` packages on the same version.
 The `effect/ai` APIs are tagged `@stability unstable`: minor releases may break
 them even though the import path no longer contains `unstable`.
@@ -126,9 +126,11 @@ yield* session.generateText({ prompt: [] });
 ## Streaming Text
 
 `streamText` returns a `Stream` of `Response.StreamPart` values. History is updated
-when the stream finalizes by folding the parts received so far. Consume to
-completion to preserve the full response: interrupted text/reasoning sequences
-without an end marker are not folded into history.
+when the stream finalizes by folding the parts received so far. The fold retains
+nonempty partial text even without an end marker and preserves start order when
+end markers arrive out of order. Unended reasoning is discarded: providers may
+need end metadata such as signatures/encrypted replay data. Consume to completion
+when you need the full response; interruption does not imply an atomic turn rollback.
 
 ```ts
 yield*
@@ -216,6 +218,32 @@ yield* restored.generateText({ prompt: 'What were we discussing?' });
 const restored = yield* Chat.fromExport(data);
 ```
 
+Byte and URL attachments round-trip through both export forms. `Prompt.FilePart`
+encodes bytes as `{ _tag: 'Uint8Array', base64 }` and URLs as `{ _tag: 'URL', href }`;
+decoding restores the original types. Strings remain strings. Persist the encoded
+prompt/chat rather than directly JSON-stringifying runtime file data. The decoder
+still accepts raw byte arrays and URL instances at non-JSON boundaries; it cannot
+recover attachment information already lost by older JSON exports.
+
+<!-- typecheck -->
+```ts
+import * as Chat from 'effect/ai/Chat';
+import * as Prompt from 'effect/ai/Prompt';
+import * as Effect from 'effect/Effect';
+
+const restoreAttachment = Effect.gen(function* () {
+  const chat = yield* Chat.fromPrompt(Prompt.fromMessages([
+    Prompt.userMessage({
+      content: [Prompt.filePart({
+        mediaType: 'image/png',
+        data: new Uint8Array([137, 80, 78, 71])
+      })]
+    })
+  ]));
+  return yield* Chat.fromJson(yield* chat.exportJson);
+});
+```
+
 ## Chat Persistence Service
 
 For automatic persistence (save after every generation), use `Chat.Persistence`:
@@ -257,6 +285,10 @@ The `Persisted` interface extends `Chat.Chat` with:
 - `save: Effect<void, AiError | PersistenceError>` — manual save trigger
 
 Provide a `Persistence.BackingPersistence` implementation (e.g., key-value store, database adapter) to the persistence layer.
+
+If stored history cannot be decoded, `Chat.Persistence` reports a typed
+`PersistenceError` with the decode cause rather than a defect. This is distinct
+from direct `Chat.fromJson` / `Chat.fromExport`, which still return `SchemaError`.
 
 ## Tool Integration (Agentic Loops)
 
@@ -343,7 +375,7 @@ Key points:
 - Pass `prompt: []` (empty) after the first turn — the model already has the full conversation in history
 - The `toolkit` option makes tools available to the model
 - Tool calls and final tool results are automatically appended to history by `generateText`
-- If a tool has `needsApproval`, the response may contain `tool-approval-request`; append `Prompt.toolApprovalResponsePart` in a tool message and call the model again
+- If a tool has `needsApproval`, the response may contain `tool-approval-request`; append `Prompt.toolApprovalResponsePart` in a tool message and call the model again. Retain approval requests, responses, and final tool results so later turns recognize already-resolved approvals rather than rerun them.
 - The loop continues until the model stops calling tools and has no pending approvals
 
 ### Registry-Backed Tool Loops
@@ -456,6 +488,11 @@ Effect.catchTag(
 ```
 
 `Chat.fromJson` and `Chat.fromExport` produce `Schema.SchemaError` if the data is malformed.
+
+Chat forwards manual-tool options to `LanguageModel`. With
+`disableToolCallResolution: true` and `toolCallValidation: 'deferred'`, returned
+tool names may be undeclared and params are unknown, even without a toolkit.
+Validate and authorize them before dispatch; see `effect-ai-language-model`.
 
 ## Concurrency
 

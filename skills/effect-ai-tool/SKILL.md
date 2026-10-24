@@ -9,7 +9,7 @@ Use this skill when implementing tools for AI language models using the Effect A
 
 ## Effect AI Documentation Access
 
-For core AI APIs inspect `packages/effect/src/ai/` at `effect@4.0.0` in the
+For core AI APIs inspect `packages/effect/src/ai/` at `effect@4.0.6` in the
 Effect source reference; provider implementations live under `packages/ai/`.
 Keep all Effect-family packages on the same version. These APIs are tagged
 `@stability unstable`, so minor releases may break them despite stable-looking
@@ -227,6 +227,13 @@ internal failures distinct when presenting or reporting them.
   encoding can still fail the returned Stream with `AiError`; return mode does
   not make stream consumption infallible.
 
+In error mode, the full failure cause is preserved, including multiple typed
+failures and existing annotations; `FailureOrigin` is added per failure rather
+than collapsing the cause to its first error. Return mode captures the first
+typed failure as a result, but defects in mixed causes still escape as defects.
+Do not use return mode as a way to swallow a failing finalizer or concurrent
+defect. Result-encoding failures retain origin `result`.
+
 ### Tool with Service Dependencies
 
 ```typescript
@@ -410,7 +417,7 @@ const toolkitLayer = toolkit.toLayer({
 const program = Effect.gen(function* () {
 	const handlers = yield* toolkit;
 	const resultStream = yield* handlers.handle('GetWeather', { location: 'NYC' });
-	return resultStream;
+	return yield* Stream.runCollect(resultStream);
 }).pipe(Effect.provide(toolkitLayer), Effect.provide(WeatherServiceLive));
 
 declare const WeatherServiceLive: Layer.Layer<WeatherService>;
@@ -758,11 +765,57 @@ const RepeatLive = RepeatToolkit.toLayer({
 
 const program = Effect.gen(function* () {
 	const handlers = yield* RepeatToolkit;
-	return yield* handlers.handle('Repeat', { times: '3' }); // encoded input is string
+	const stream = yield* handlers.handle('Repeat', { times: '3' }); // encoded input is string
+	return yield* Stream.runCollect(stream);
 }).pipe(Effect.provide(RepeatLive));
 ```
 
 Passing the decoded `{ times: 3 }` directly to `handle` is now a type error. Use the encoded boundary type and let `handle` perform the schema decode.
+
+### Bounded preliminary results and cleanup
+
+The result stream owns the handler lifetime: closing it interrupts the handler,
+even when a consumer stops early (for example `Stream.take`). Consume or close
+every stream rather than treating `handle` as detached background work.
+
+`Toolkit.PreliminaryBuffer` defaults to `'unbounded'`. Provide a positive integer
+around `handle` or its calling program to bound that call's preliminary queue.
+`context.preliminary` suspends when it fills; invalid values defect. Consume the
+stream while the producer runs, not after waiting for producer completion, or a
+full queue can deadlock. `LanguageModel` has additional buffers, so this is not
+an end-to-end memory bound. The export exists at exact 4.0.6 despite an upstream
+`@since 4.1.0` annotation.
+
+<!-- typecheck -->
+```ts
+import * as Tool from 'effect/ai/Tool';
+import * as Toolkit from 'effect/ai/Toolkit';
+import * as Arr from 'effect/Array';
+import * as Effect from 'effect/Effect';
+import * as Schema from 'effect/Schema';
+import * as Stream from 'effect/Stream';
+
+const Progress = Toolkit.make(Tool.make('Progress', { success: Schema.Number }));
+const ProgressLive = Progress.toLayer({
+  Progress: Effect.fnUntraced(function* (_, context) {
+    yield* Effect.forEach(Arr.range(0, 63), context.preliminary, {
+      concurrency: 1,
+      discard: true
+    });
+    return 64;
+  })
+});
+
+const consume = Effect.gen(function* () {
+  const handlers = yield* Progress;
+  const stream = yield* handlers.handle('Progress', {}).pipe(
+    Effect.provideService(Toolkit.PreliminaryBuffer, 16)
+  );
+  // Pull while the handler runs; do not join its producer first.
+  return yield* Stream.runFold(stream, () => 0, (count) => count + 1);
+}).pipe(Effect.provide(ProgressLive));
+// 64 preliminary updates plus one final result.
+```
 
 ## Advanced Patterns
 
@@ -840,27 +893,41 @@ Tool.isProviderDefined(providerTool);
 
 ### Dynamic Tool Selection
 
-```typescript
-import { Effect, Match } from 'effect';
+Manual model calls default to strict encoded params. With disabled resolution
+and `toolCallValidation: 'deferred'`, params are unknown and names may be
+undeclared, even without a toolkit. Validate names, encoded parameters, and
+authorization before dispatch; provider-executed calls remain validated.
+`Toolkit.handle` is not a permission/approval gate by itself.
 
-const executeTool = (toolName: string, params: unknown) =>
-	Effect.gen(function* () {
-		const toolkit = yield* MyToolkit;
+<!-- typecheck -->
+```ts
+import * as Tool from 'effect/ai/Tool';
+import * as Toolkit from 'effect/ai/Toolkit';
+import * as Effect from 'effect/Effect';
+import * as Schema from 'effect/Schema';
+import * as Stream from 'effect/Stream';
 
-		const handler = Match.value(toolName).pipe(
-			Match.when('GetWeather', () =>
-				toolkit.handle('GetWeather', params)
-			),
-			Match.when('GetCurrentTime', () =>
-				toolkit.handle('GetCurrentTime', params)
-			),
-			Match.orElse(() =>
-				Effect.fail(new Error(`Unknown tool: ${toolName}`))
-			)
-		);
+class UnknownTool extends Schema.TaggedError<UnknownTool>()('UnknownTool', {
+  name: Schema.String
+}) {}
 
-		return yield* handler;
-	});
+const Repeat = Tool.make('Repeat', {
+  parameters: Schema.Struct({ times: Schema.NumberFromString }),
+  success: Schema.Number
+});
+const Tools = Toolkit.make(Repeat);
+const ToolsLive = Tools.toLayer({ Repeat: ({ times }) => Effect.succeed(times + 1) });
+
+// This demo tool is pure; mutating tools need an authorization/approval boundary too.
+const executeTool = Effect.fn('Tools.execute')(function* (name: string, raw: unknown) {
+  if (name !== 'Repeat') return yield* Effect.fail(new UnknownTool({ name }));
+  const params = yield* Schema.decodeUnknownEffect(
+    Schema.toEncoded(Repeat.parametersSchema)
+  )(raw);
+  const handlers = yield* Tools;
+  const stream = yield* handlers.handle('Repeat', params);
+  return yield* Stream.runCollect(stream);
+}, Effect.provide(ToolsLive));
 ```
 
 ## Complete Example

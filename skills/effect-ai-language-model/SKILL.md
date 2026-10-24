@@ -7,7 +7,7 @@ description: Master the Effect AI LanguageModel service for text generation, str
 
 Pattern guide for working with the LanguageModel service from Effect AI for type-safe LLM interactions with Effect's functional patterns.
 
-Baseline: `effect@4.0.0`. Inspect that tag in the Effect source reference, not
+Baseline: `effect@4.0.6`. Inspect that tag in the Effect source reference, not
 unreleased main. Keep Effect-family packages on the same version. `effect/ai`
 APIs carry `@stability unstable` and may change incompatibly in minor releases.
 
@@ -102,12 +102,54 @@ const manualTools = LanguageModel.generateText({
 ```
 
 With `disableToolCallResolution: true`, tool-call `params` retain the schema's
-**encoded** representation. Response generics use the mode `"encoded"`, for
+**encoded** representation under the default `toolCallValidation: 'strict'`.
+Response generics use the mode `"encoded"`, for
 example `GenerateTextResponse<Tools, "encoded">` and
 `Response.StreamPart<Tools, "encoded">`. Automatic resolution uses `"opaque"`
 parameters (`unknown`), because invalid calls can also appear in responses.
 Only successfully decoded handler inputs have the decoded parameter type.
 For `Schema.NumberFromString`, manual calls contain `{ count: '3' }`.
+
+### Deferred validation for manual dispatch
+
+Combine `disableToolCallResolution: true` with `toolCallValidation: 'deferred'`
+to receive model-generated calls with arbitrary names and **unknown** params,
+including undeclared tools or calls without any toolkit. The response mode is
+`'deferred'`. Anthropic, OpenAI, and OpenAI-Compat support this provider option;
+custom adapters must honor `ProviderOptions.toolCallValidation` to preserve
+undeclared calls. Provider-executed calls and other response parts remain
+validated. The option has no effect with automatic resolution enabled, where
+Toolkit validates according to each tool's `failureMode`.
+
+This is a validation handoff, not permission to execute arbitrary calls. Resolve
+the name against your allowlist, decode params to the tool's **encoded** schema,
+apply authorization/approval policy, then dispatch. Do not cast unknown params
+to `Tool.ParametersEncoded`.
+
+<!-- typecheck -->
+```ts
+import * as LanguageModel from 'effect/ai/LanguageModel';
+import * as Effect from 'effect/Effect';
+import * as Schema from 'effect/Schema';
+
+class SearchInput extends Schema.Class<SearchInput>('SearchInput')({
+  query: Schema.String
+}) {}
+
+const inspectManualCalls = Effect.gen(function* () {
+  const response = yield* LanguageModel.generateText({
+    prompt: 'Continue the pending tool call in the conversation',
+    disableToolCallResolution: true,
+    toolCallValidation: 'deferred'
+  });
+  return yield* Effect.forEach(response.toolCalls, Effect.fnUntraced(function* (call) {
+    if (call.name !== 'Search') return { status: 'rejected', name: call.name };
+    const input = yield* Schema.decodeUnknownEffect(SearchInput)(call.params);
+    // Inspection only. Authorize before passing input to an execution service.
+    return { status: 'validated', query: input.query };
+  }), { concurrency: 1 });
+});
+```
 
 Pass those encoded params directly to `toolkit.handle(name, params, toolCallId)` when resolving manually. `Toolkit.handle` now accepts `Tool.ParametersEncoded<T>` and performs the decode before the handler receives `Tool.Parameters<T>`.
 
@@ -118,6 +160,12 @@ The outer Effect can fail with `AiError`, and the Stream can fail with
 result encoding fails.
 
 ### Response Accessors
+
+For persisted/provider-neutral parts, `Response.AllParts()`, `Response.Part()`,
+and `Response.StreamPart()` work without a toolkit and decode arbitrary tool
+names with unknown params/results. Supplying `Toolkit.empty` instead restricts
+tool names; it is not equivalent. Narrow the tool name and decode the unknown
+payload before using it.
 
 ```typescript
 const response = yield* LanguageModel.generateText({ prompt: '...' });
@@ -302,6 +350,13 @@ toolChoice: {
 
 ## Error Handling
 
+Distinguish nonretryable `InvalidResponseError` (malformed provider envelopes or
+SSE schema failures, with optional HTTP context) from retryable
+`InvalidOutputError` (decoded model output fails validation). The former exists
+at 4.0.6 despite its upstream `@since 4.1.0` annotation. Use reason-specific
+recovery such as `Effect.catchReason('AiError', 'RateLimitError', ...)`; a broad
+fallback must not silently hide authentication, quota, or malformed-wire failures.
+
 ```typescript
 import * as AiError from 'effect/ai/AiError';
 
@@ -324,6 +379,12 @@ Define named decisions once and send them in one call; input encoding services
 remain explicit and provider/validation failures use `AiError`. Classification
 requires at least two labels, rating requires at least two distinct ordered
 levels, and a definition requires at least one decision.
+
+Descriptions accept strings, JSON objects, or JSON arrays. Classify criteria can
+also be null; rate criteria accept strings or `{ label, description }` and are
+stored as objects. Use `DecisionModel.decideSettled` when valid answers should
+survive per-decision missing/refused/invalid outcomes; provider failures still
+fail the whole call. Strict `decide` remains all-or-nothing.
 
 `Decision.probability({ instructions })` estimates the probability of `true`.
 Its `criteria` is optional; when supplied it must describe both `false` and
@@ -367,8 +428,12 @@ type MyError = LanguageModel.ExtractError<typeof options>;
 // Extract service requirements from options
 type MyRequirements = LanguageModel.ExtractServices<typeof options>;
 
-// "encoded" for literal disableToolCallResolution: true; otherwise "opaque"
+// "deferred" for disabled resolution with deferred validation;
+// otherwise "encoded" for literal disabled resolution, or "opaque"
 type ParametersMode = LanguageModel.ExtractToolParametersMode<typeof options>;
+
+// Without a toolkit: "deferred" or "decoded"
+type WithoutToolkit = LanguageModel.ExtractToolParametersModeWithoutToolkit<typeof options>;
 
 // Inferred based on:
 // - toolkit: Toolkit.WithHandler<Tools> → Tool.HandlerError<Tools> ∈ E
@@ -391,6 +456,14 @@ When implementing a custom LanguageModel provider, return encoded parts: `Array<
 incremental request with the full prompt. The fallback clears
 `previousResponseId` and `incrementalPrompt`; use that signal to reset adapter
 turn state without unnecessarily closing a healthy connection.
+
+`LanguageModel.make` also accepts optional
+`supportsSystemMessagesInHistory: Effect<boolean>`. The service exposes it as an
+optional effect: evaluate it in the request context so scoped provider overrides
+apply. Absence means **unknown**, not false; a true result can still have placement
+restrictions. Anthropic implements this capability and its
+`midConversationSystemMessages` override. Do not cache a context-dependent result
+globally or assume every provider supports system messages between turns.
 
 ```typescript
 import * as LanguageModel from 'effect/ai/LanguageModel';

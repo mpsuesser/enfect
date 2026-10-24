@@ -7,7 +7,7 @@ description: Build prompts for Effect AI using messages, parts, and composition 
 
 Master the Effect AI Prompt API for building type-safe conversations with language models.
 
-Baseline: `effect@4.0.0`; inspect that tag in the Effect source reference.
+Baseline: `effect@4.0.6`; inspect that tag in the Effect source reference.
 `effect/ai` APIs remain `@stability unstable` and can break in minor releases.
 Keep provider packages on the same version as `effect`.
 
@@ -80,7 +80,7 @@ const systemShorthand = Prompt.systemMessage({
 const systemWithOptions = Prompt.makeMessage('system', {
 	content: 'You are an expert coder.',
 	options: {
-		anthropic: { cache_control: { type: 'ephemeral' } }
+		anthropic: { cacheControl: { type: 'ephemeral' } }
 	}
 });
 ```
@@ -401,13 +401,15 @@ const responseParts: ReadonlyArray<Response.AnyPart> = [
 	})
 ];
 
-// Folds complete streaming text/reasoning and splits assistant/tool messages.
+// Folds streaming text/reasoning and splits assistant/tool messages.
 const historyPrompt = Prompt.fromResponseParts(responseParts);
 ```
 
 `Prompt.fromResponseParts` folds streaming text/reasoning by matching IDs and
-emits the accumulated part on its end marker. Pass complete start/delta/end
-sequences rather than isolated deltas. It places tool calls and approval requests
+preserves their **start order**, even when end markers arrive out of order. It
+retains nonempty text without an end marker, but drops unended reasoning because
+providers may require signatures or encrypted replay metadata from the end part.
+Pass accumulated start/delta/end parts rather than isolated deltas. It places tool calls and approval requests
 in assistant messages and skips preliminary tool results. For final tool results
 it always uses `encodedResult`: framework-executed results
 (`providerExecuted: false`) become tool messages, while provider-executed results
@@ -529,7 +531,7 @@ const program = Effect.gen(function* () {
 
 ### OpenAI Responses explicit cache breakpoints
 
-With `@effect/ai-openai` loaded, system-message and text-part options accept
+With `@effect/ai-openai` loaded, system-message, text-part, and file-part options accept
 `openai.promptCacheBreakpoint`. This requires GPT-5.6 or later; earlier models
 may reject it. Provider config uses snake_case; Prompt metadata uses camelCase.
 
@@ -555,29 +557,25 @@ const program = LanguageModel.generateText({
 })));
 ```
 
-A text part can carry the same breakpoint after reusable user context. The
-adapter forwards it as `prompt_cache_breakpoint` on input text. Supply the
+A text or file part can carry the same breakpoint after reusable user context.
+The adapter forwards it as `prompt_cache_breakpoint` on input text, image, or
+file items. Model config also supports `prompt_cache_retention` and
+`prompt_cache_options.comparison_response_id`; inspect finish metadata for cache
+diagnostics rather than treating a breakpoint as proof of a hit. Supply the
 OpenAI client layer at the runtime boundary (see `effect-ai-provider`).
 
 ### Other provider metadata
 
 ```typescript
-// Augment options interfaces via module augmentation
-declare module 'effect/ai/Prompt' {
-	interface TextPartOptions {
-		readonly anthropic?: {
-			readonly cache_control?: {
-				readonly type: 'ephemeral';
-			};
-		};
-	}
-}
+// Load the provider's existing metadata augmentation; do not redeclare it.
+import '@effect/ai-anthropic/AnthropicLanguageModel';
+import * as Prompt from 'effect/ai/Prompt';
 
 // Use in parts
 const cachedPart = Prompt.makePart('text', {
 	text: 'Large document...',
 	options: {
-		anthropic: { cache_control: { type: 'ephemeral' } }
+		anthropic: { cacheControl: { type: 'ephemeral' } }
 	}
 });
 
@@ -585,10 +583,20 @@ const cachedPart = Prompt.makePart('text', {
 const cachedMessage = Prompt.makeMessage('system', {
 	content: 'You are an expert.',
 	options: {
-		anthropic: { cache_control: { type: 'ephemeral' } }
+		anthropic: { cacheControl: { type: 'ephemeral' } }
 	}
 });
 ```
+
+Anthropic Prompt metadata is camelCase `anthropic.cacheControl`, not wire-level
+`cache_control`. Assistant-message breakpoints attach to the last eligible
+non-thinking block; explicit part-level cache control takes precedence. All
+system instructions are preserved. If mid-conversation placement is impossible,
+the adapter keeps all system blocks top-level in order. Separately, provider
+fallback blocks appear on response metadata under `anthropic.fallback` with the
+fallback `modelId`. Inspect
+`LanguageModel.supportsSystemMessagesInHistory` in the request context when
+choosing prompt placement; see `effect-ai-provider` for the override.
 
 ## Serialization
 
@@ -645,6 +653,31 @@ const program = Effect.gen(function* () {
 ```
 
 **Note**: There is no `Prompt.FromJson` in v4. Use `Schema.fromJsonString(Prompt.Prompt)` instead.
+
+File data is JSON-safe through the prompt codec: bytes encode as
+`{ _tag: 'Uint8Array', base64 }` and URLs as `{ _tag: 'URL', href }`, then decode
+back to their original types. Strings remain strings. Raw bytes and URL instances
+remain accepted decoder input; do not directly stringify runtime file parts or
+expect to recover bytes already lost in an older malformed export.
+
+<!-- typecheck -->
+```ts
+import * as Prompt from 'effect/ai/Prompt';
+import * as Effect from 'effect/Effect';
+import * as Schema from 'effect/Schema';
+
+const PromptJson = Schema.fromJsonString(Prompt.Prompt);
+const roundTrip = Effect.gen(function* () {
+  const prompt = Prompt.fromMessages([
+    Prompt.userMessage({ content: [Prompt.filePart({
+      mediaType: 'image/png',
+      data: new URL('https://example.com/image.png')
+    })] })
+  ]);
+  const json = yield* Schema.encodeEffect(PromptJson)(prompt);
+  return yield* Schema.decodeUnknownEffect(PromptJson)(json);
+});
+```
 
 ## Common Patterns
 
