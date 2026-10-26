@@ -105,13 +105,16 @@ describe("Claude Code session context", () => {
     expect(noticed.slice(1)).toEqual(plain.slice(1))
   })
 
-  it("declares one SessionStart hook per part", async () => {
+  it("declares one SessionStart and one SubagentStart hook per part", async () => {
     const parts = await buildSessionParts(guidanceDirectory)
-    const hooks = await json("hooks/hooks.json")
-    const declared = JSON.stringify(hooks).match(/"session-start","\d+"/g) ?? []
-    expect(declared).toEqual(
-      Array.from({ length: SESSION_PARTS }, (_, index) => `"session-start","${index + 1}"`)
-    )
+    const { hooks } = await json("hooks/hooks.json")
+    const declaredArgs = (event: string) => JSON.stringify(Reflect.get(Object(hooks), event))
+    const expectedArgs = (command: string) =>
+      Array.from({ length: SESSION_PARTS }, (_, index) => `"${command}","${index + 1}"`)
+    expect(declaredArgs("SessionStart").match(/"session-start","\d+"/g))
+      .toEqual(expectedArgs("session-start"))
+    expect(declaredArgs("SubagentStart").match(/"subagent-start","\d+"/g))
+      .toEqual(expectedArgs("subagent-start"))
     expect(
       parts.length,
       "Guidance outgrew the declared SessionStart parts; raise SESSION_PARTS and hooks.json"

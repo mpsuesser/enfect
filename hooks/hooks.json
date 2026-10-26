@@ -1,5 +1,5 @@
 {
-  "description": "Inject Effect guidance at session start and review Effect patterns after file writes",
+  "description": "Inject Effect guidance at session and subagent start and review Effect patterns after file writes",
   "hooks": {
     "SessionStart": [
       {
@@ -120,6 +120,132 @@
             "args": [
               "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
               "session-start",
+              "12"
+            ],
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "subagent-start",
+              "1"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "subagent-start",
+              "2"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "subagent-start",
+              "3"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "subagent-start",
+              "4"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "subagent-start",
+              "5"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "subagent-start",
+              "6"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "subagent-start",
+              "7"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "subagent-start",
+              "8"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "subagent-start",
+              "9"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "subagent-start",
+              "10"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "subagent-start",
+              "11"
+            ],
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.mjs",
+              "subagent-start",
               "12"
             ],
             "timeout": 30

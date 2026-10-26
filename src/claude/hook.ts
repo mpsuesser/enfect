@@ -30,9 +30,21 @@ const emit = (hookEventName: string, additionalContext: string): void => {
   process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName, additionalContext } }))
 }
 
+const requestedPart = (): number => Number(process.argv[3] ?? "1")
+
+const emitGuidancePart = async (
+  hookEventName: string,
+  part: number,
+  notices: ReadonlyArray<string>
+): Promise<void> => {
+  const parts = await buildSessionParts(path.join(pluginRoot, "guidance"), notices)
+  const context = parts[part - 1]
+  if (context !== undefined) emit(hookEventName, context)
+}
+
 // Each SessionStart hook entry emits one guidance part; part 1 also prepares dependencies.
 const sessionStart = async (): Promise<void> => {
-  const part = Number(process.argv[3] ?? "1")
+  const part = requestedPart()
   const notices = part !== 1 ? [] : [
     await ensureAstGrep(),
     existsSync(EFFECT_REFERENCE) ? undefined : [
@@ -41,10 +53,12 @@ const sessionStart = async (): Promise<void> => {
       `\`git clone https://github.com/Effect-TS/effect.git "${EFFECT_REFERENCE}"\`.`
     ].join(" ")
   ].filter((notice): notice is string => notice !== undefined)
-  const parts = await buildSessionParts(path.join(pluginRoot, "guidance"), notices)
-  const context = parts[part - 1]
-  if (context !== undefined) emit("SessionStart", context)
+  await emitGuidancePart("SessionStart", part, notices)
 }
+
+// SessionStart context never reaches subagents, so each SubagentStart hook entry emits the
+// same guidance part. Dependency setup and its notices belong to the parent session.
+const subagentStart = (): Promise<void> => emitGuidancePart("SubagentStart", requestedPart(), [])
 
 const postToolUse = async (): Promise<void> => {
   const payload = await readStdin()
@@ -55,6 +69,7 @@ const postToolUse = async (): Promise<void> => {
 
 const commands: Record<string, () => Promise<void>> = {
   "session-start": sessionStart,
+  "subagent-start": subagentStart,
   "post-tool-use": postToolUse
 }
 

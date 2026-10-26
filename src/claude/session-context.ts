@@ -4,7 +4,10 @@ import path from "node:path"
 /** Claude Code saves hook context over 10,000 characters to a file and shows only a preview. */
 export const CONTEXT_LIMIT = 9_500
 
-/** SessionStart hook entries declared in hooks/hooks.json, one per guidance part. */
+/**
+ * Guidance parts declared in hooks/hooks.json: one SessionStart entry and one SubagentStart
+ * entry per part.
+ */
 export const SESSION_PARTS = 12
 
 /** Plugin name used to namespace bundled skills in Claude Code. */

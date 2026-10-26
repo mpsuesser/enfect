@@ -9763,8 +9763,15 @@ var readStdin = async () => {
 var emit = (hookEventName, additionalContext) => {
   process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName, additionalContext } }));
 };
+var requestedPart = () => Number(process.argv[3] ?? "1");
+var emitGuidancePart = async (hookEventName, part, notices) => {
+  const parts = await buildSessionParts(path6.join(pluginRoot, "guidance"), notices);
+  const context = parts[part - 1];
+  if (context !== undefined)
+    emit(hookEventName, context);
+};
 var sessionStart = async () => {
-  const part = Number(process.argv[3] ?? "1");
+  const part = requestedPart();
   const notices = part !== 1 ? [] : [
     await ensureAstGrep(),
     existsSync(EFFECT_REFERENCE) ? undefined : [
@@ -9773,11 +9780,9 @@ var sessionStart = async () => {
       `\`git clone https://github.com/Effect-TS/effect.git "${EFFECT_REFERENCE}"\`.`
     ].join(" ")
   ].filter((notice) => notice !== undefined);
-  const parts = await buildSessionParts(path6.join(pluginRoot, "guidance"), notices);
-  const context = parts[part - 1];
-  if (context !== undefined)
-    emit("SessionStart", context);
+  await emitGuidancePart("SessionStart", part, notices);
 };
+var subagentStart = () => emitGuidancePart("SubagentStart", requestedPart(), []);
 var postToolUse = async () => {
   const payload = await readStdin();
   const patterns = await loadPatterns(path6.join(pluginRoot, "patterns"));
@@ -9787,6 +9792,7 @@ var postToolUse = async () => {
 };
 var commands = {
   "session-start": sessionStart,
+  "subagent-start": subagentStart,
   "post-tool-use": postToolUse
 };
 var command = commands[process.argv[2] ?? ""];
