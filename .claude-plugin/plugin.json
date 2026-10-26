@@ -2,7 +2,7 @@
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "effect-enforcer",
   "displayName": "Effect Enforcer",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Effect v4 skills, guidance, and post-write pattern enforcement for Claude Code",
   "author": { "name": "Marc Suesser" },
   "homepage": "https://github.com/mpsuesser/opencode-effect-enforcer#readme",

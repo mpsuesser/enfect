@@ -9011,7 +9011,7 @@ import { promisify } from "node:util";
 var package_default = {
   $schema: "https://www.schemastore.org/package.json",
   name: "opencode-effect-enforcer",
-  version: "0.6.0",
+  version: "0.7.0",
   description: "OpenCode V2 and Claude Code plugin for Effect v4 skills, guidance, and pattern enforcement",
   keywords: [
     "opencode",
