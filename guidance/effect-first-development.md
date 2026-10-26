@@ -105,6 +105,7 @@ const toDisplayName = (rawName: string | null | undefined) =>
 
 - Unknown or external data must be decoded at the boundary.
 - Prefer `Schema.decodeUnknownEffect` for effectful paths and `Schema.decodeUnknownSync` only where sync failure handling is explicit.
+- When the input's type already matches the schema's encoded type (for example, a `string` for a codec whose encoded type is `string`), use `Schema.decodeEffect` so the compiler keeps checking the input. Never widen a known value to `unknown`, or cast it, just to reach a decoder.
 - Prefer `Schema.Class` over `Schema.Struct` for all decoded shapes — including HTTP response bodies, API payloads, and ephemeral wire formats, not just domain models. Named `Schema.Class` types enable `instanceof` discrimination (e.g., `Schema.Union([SuccessResponse, ErrorResponse])` then `if (parsed instanceof ErrorResponse)`), which is compile-time safe.
 - Use `Schema.Class` for shapes discriminated via `instanceof` or participating in a `Schema.Union`.
 - Prefer schema constructors over plain `type` / `interface` for property-based domain shapes; derive types from schemas rather than maintaining parallel models. Keep plain types for shapes schema cannot represent cleanly, such as complex type-level transforms, utility types, and overload-only surfaces.
@@ -177,7 +178,7 @@ const findActiveEmail = (
 
 ### EF-7: Branch with `Match` / `Arr.match`; model states with schema tagged unions
 
-- Replace brittle if/else ladders with `Match`.
+- Use `Match` for branching over literal and tagged unions instead of if/else ladders. Ordinary `if` statements and early returns are fine for a single condition.
 - For empty/non-empty array branching, prefer `Arr.match` over manual length checks.
 - Do not use native `switch` statements for domain branching.
 - Model domain states as schema tagged unions (see EF-13), then branch exhaustively.
@@ -204,11 +205,6 @@ const summarizeAttempts = (attempts: ReadonlyArray<number>) =>
 		onNonEmpty: (values) => `attempts:${Arr.length(values)}`
 	});
 ```
-
-### EF-7b: Prefer `Bool.match` for booleans
-
-- For boolean-driven branching, prefer `Bool.match` from `effect/Boolean` over ad-hoc `if/else`.
-- This keeps control flow expression-oriented and consistent with Effect matching style.
 
 ### EF-8: Services use explicit tags + `Layer`
 
@@ -478,6 +474,7 @@ const b = pipe('value', addPrefix('p:'));
 
 Example:
 
+<!-- typecheck -->
 ```ts
 import * as Schema from 'effect/Schema';
 
@@ -487,9 +484,11 @@ export class User extends Schema.Class<User>('User')({
 }) {}
 
 const UserJson = Schema.fromJsonString(User);
+const decodeUserJson = Schema.decodeEffect(UserJson);
+const encodeUserJson = Schema.encodeEffect(UserJson);
 
-const decodeUserJson = Schema.decodeUnknownEffect(UserJson);
-const encodeUserJson = Schema.encodeUnknownEffect(UserJson);
+export const parseUser = (body: string) => decodeUserJson(body);
+export const serializeUser = (user: User) => encodeUserJson(user);
 ```
 
 ### EF-20: Completion gate is strict
@@ -732,7 +731,7 @@ const validateInput = Effect.fn('Input.validate')(function* (value: string) {
 - When isolation is required, use `Effect.provide(..., { local: true })` or `Layer.fresh`.
 - Document why isolation is necessary for behavior-sensitive paths.
 - Compose `defaultLayer` values directly by default.
-- Use `Layer.suspend(() => ...)` only when import evaluation order or a real circular dependency requires deferred composition.
+- Use `Layer.suspend(() => ...)` only when import evaluation order, a real circular dependency, or test-only imports that production bundles must drop require deferred composition.
 - Reference: `Effect.provide` and `Layer.fresh` in `packages/effect/src/{Effect,Layer}.ts`.
 
 Example:
