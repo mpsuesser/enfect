@@ -1,0 +1,72 @@
+import { describe, expect, it } from '@effect/vitest';
+
+import rule from '../../src/rules/prefer-arr-match.ts';
+import * as Testing from 'effect-oxlint/testing';
+
+describe('prefer-arr-match', () => {
+	const lengthAccess = () =>
+		({
+			type: 'MemberExpression',
+			object: { type: 'Identifier', name: 'items' },
+			property: { type: 'Identifier', name: 'length' }
+		}) as const;
+
+	const zero = () => ({ type: 'Literal', value: 0 }) as const;
+	const one = () => ({ type: 'Literal', value: 1 }) as const;
+
+	it('flags items.length === 0', () => {
+		const node = Testing.binaryExpr('===', lengthAccess(), zero());
+		const errors = Testing.runRule(rule, 'BinaryExpression', node);
+		expect(errors.length).toBe(1);
+		expect(errors[0]?.diagnostic.message).toContain('Arr.match');
+	});
+
+	it('flags items.length !== 0', () => {
+		const node = Testing.binaryExpr('!==', lengthAccess(), zero());
+		const errors = Testing.runRule(rule, 'BinaryExpression', node);
+		expect(errors.length).toBe(1);
+	});
+
+	it('flags items.length > 0', () => {
+		const node = Testing.binaryExpr('>', lengthAccess(), zero());
+		const errors = Testing.runRule(rule, 'BinaryExpression', node);
+		expect(errors.length).toBe(1);
+	});
+
+	it('flags 0 === items.length (reversed)', () => {
+		const node = Testing.binaryExpr('===', zero(), lengthAccess());
+		const errors = Testing.runRule(rule, 'BinaryExpression', node);
+		expect(errors.length).toBe(1);
+	});
+
+	it('flags items.length >= 1', () => {
+		const node = Testing.binaryExpr('>=', lengthAccess(), one());
+		const errors = Testing.runRule(rule, 'BinaryExpression', node);
+		expect(errors.length).toBe(1);
+	});
+
+	it('flags items.length < 1', () => {
+		const node = Testing.binaryExpr('<', lengthAccess(), one());
+		const errors = Testing.runRule(rule, 'BinaryExpression', node);
+		expect(errors.length).toBe(1);
+	});
+
+	it('does not flag items.length === 5', () => {
+		const node = Testing.binaryExpr('===', lengthAccess(), {
+			type: 'Literal',
+			value: 5
+		});
+		const errors = Testing.runRule(rule, 'BinaryExpression', node);
+		expect(errors.length).toBe(0);
+	});
+
+	it('does not flag unrelated binary expressions', () => {
+		const node = Testing.binaryExpr(
+			'===',
+			{ type: 'Identifier', name: 'a' },
+			{ type: 'Identifier', name: 'b' }
+		);
+		const errors = Testing.runRule(rule, 'BinaryExpression', node);
+		expect(errors.length).toBe(0);
+	});
+});

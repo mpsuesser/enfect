@@ -1,0 +1,18 @@
+{
+  "name": "@mpsuesser/oxlint-plugin-effect",
+  "version": "0.6.0",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publish": {
+    "include": [
+      "LICENSE",
+      "licenses/**",
+      "README.md",
+      "CHANGELOG.md",
+      "src/**/*.ts"
+    ],
+    "exclude": ["src/**/*.test.ts"]
+  }
+}
