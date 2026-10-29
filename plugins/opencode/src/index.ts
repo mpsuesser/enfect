@@ -2,9 +2,11 @@ import { Plugin } from '@opencode/plugin';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { loadCommands } from '@enfect/core/commands';
 import { loadGuidance, withPluginPolicy } from '@enfect/core/guidance';
 import { loadPatterns } from '@enfect/core/pattern-catalog';
 import { consumeAgentOptOut } from './agent-policy.ts';
+import { registerCommands } from './commands.ts';
 import { registerPatternEnforcement } from './enforcer.ts';
 import { loadSkills } from './skills.ts';
 
@@ -18,10 +20,11 @@ export default Plugin.define({
 	id: 'enfect',
 	setup: async (context) => {
 		const disabledAgents = new Set<unknown>();
-		const [guidance, patterns, skills] = await Promise.all([
+		const [guidance, patterns, skills, commands] = await Promise.all([
 			loadGuidance(path.join(packageDirectory, 'guidance')),
 			loadPatterns(path.join(packageDirectory, 'patterns')),
-			loadSkills(path.join(packageDirectory, 'skills'))
+			loadSkills(path.join(packageDirectory, 'skills')),
+			loadCommands(path.join(packageDirectory, 'commands'))
 		]);
 
 		await context.agent.transform((draft) => {
@@ -33,6 +36,7 @@ export default Plugin.define({
 		await context.skill.transform((draft) => {
 			for (const skill of skills) draft.add(skill);
 		});
+		await registerCommands(context, commands);
 		await context.session.hook('context', (event) => {
 			if (disabledAgents.has(event.agent)) return;
 			event.system.push({

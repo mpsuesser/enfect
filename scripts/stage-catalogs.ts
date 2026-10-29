@@ -4,6 +4,7 @@
 import { cp, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 
+import { commandsDirectory } from '../packages/commands/index.ts';
 import {
 	docsDirectory,
 	guidanceDirectory
@@ -46,6 +47,7 @@ const isSkill = async (entry: string): Promise<boolean> =>
 	).includes('SKILL.md');
 
 await Promise.all([
+	stage(commandsDirectory, 'commands', isMarkdownDocument),
 	stage(guidanceDirectory, 'guidance', isMarkdownDocument),
 	stage(docsDirectory, 'docs', isMarkdownDocument),
 	stage(patternsDirectory, 'patterns', isMarkdownDocument),

@@ -2,6 +2,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'bun:test';
 
+import { commandsDirectory } from '../packages/commands/index.ts';
 import { guidanceDirectory } from '../packages/guidance/index.ts';
 import { patternsDirectory } from '../packages/patterns/index.ts';
 import { skillsDirectory } from '../packages/skills/index.ts';
@@ -10,6 +11,13 @@ const isDocument = (name: string): boolean =>
 	name.endsWith('.md') && name !== 'README.md';
 
 const catalogs = [
+	{
+		name: 'commands',
+		directory: commandsDirectory,
+		count: 1,
+		links: async (directory: string) =>
+			(await readdir(directory)).filter(isDocument)
+	},
 	{
 		name: 'guidance',
 		directory: guidanceDirectory,

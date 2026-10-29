@@ -1,6 +1,6 @@
 {
   "name": "@enfect/claude",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Effect v4 guidance, skills, and post-write pattern checks for Claude Code",
   "keywords": [
     "claude-code",
@@ -34,13 +34,14 @@
     "access": "public"
   },
   "scripts": {
-    "build": "bun build src/hook.ts --target=node --format=esm --external @ast-grep/napi --outfile dist/hook.mjs && bun ../../scripts/stage-catalogs.ts",
+    "build": "bun build src/hook.ts --target=node --format=esm --external @ast-grep/napi --outfile dist/hook.mjs && bun ../../scripts/stage-catalogs.ts && bun scripts/command-skills.ts",
     "prepack": "bun run build"
   },
   "dependencies": {
     "@ast-grep/napi": "^0.42.3"
   },
   "devDependencies": {
+    "@enfect/commands": "workspace:*",
     "@enfect/core": "workspace:*",
     "@enfect/guidance": "workspace:*",
     "@enfect/patterns": "workspace:*",

@@ -43,6 +43,12 @@ session, the plugin installs the `@ast-grep/napi` native binding into its
 Claude Code data directory. If that install fails, regex-based checks still
 run, and the session context notes that AST-based checks are disabled.
 
+## Commands
+
+Commands come from [`packages/commands`](../../packages/commands) and ship as
+plugin skills that only the user can invoke. Try `/enfect:enfect-hello-world Ada`
+to get `Hello, Ada!`. Text after the command name fills `$ARGUMENTS`.
+
 ## Develop locally
 
 From the repository root, run `bun run build`, then start a session with

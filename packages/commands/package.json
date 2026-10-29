@@ -1,0 +1,10 @@
+{
+  "name": "@enfect/commands",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Slash commands bundled with the Enfect agent plugins",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  }
+}

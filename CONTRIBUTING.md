@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - [Bun](https://bun.sh) 1.4.4
-- Node.js 24 or newer, for the `@enfect/oxlint` tests and the Claude Code hook
+- Node.js 24 or newer, for the `@enfect/oxlint` tests and the Claude Code and Codex CLI hooks
 
 ## Setup
 
@@ -17,11 +17,16 @@ bun install
 
 ```
 .claude-plugin/marketplace.json   Claude Code marketplace; installs @enfect/claude from npm
+.agents/plugins/marketplace.json  Codex marketplace; installs @enfect/codex from npm
+.agents/commands/                 commands for agents working on this repository
 plugins/                          published packages, one per host
   claude/     @enfect/claude: Claude Code plugin manifest, hooks, and hook entrypoint
+  codex/      @enfect/codex: Codex plugin manifest, generated hooks, and hook entrypoint
   opencode/   @enfect/opencode: OpenCode V2 plugin
   oxlint/     @enfect/oxlint: oxlint rules and presets (npm and JSR)
+  pi/         @enfect/pi: Pi extension, skills, and prompt templates
 packages/                         private workspace packages shared by the agent plugins
+  commands/   slash commands, one Markdown file each
   core/       catalog loading, pattern matching, write projection, and feedback
   guidance/   documents added to every session, plus Effect release audits in docs/
   patterns/   post-write checks, one Markdown file and one test each
@@ -30,10 +35,11 @@ scripts/      stage-catalogs.ts: copies the catalogs into an agent plugin's buil
 test/         cross-package checks: catalog READMEs, Effect release alignment, versions
 ```
 
-Edit guidance, skills, and patterns only in `packages/`. The Claude Code and
-OpenCode builds bundle the core code and copy the catalogs into their own
+Edit commands, guidance, skills, and patterns only in `packages/`. Each agent
+plugin's build bundles the core code and copies the catalogs into its own
 package, because installed plugins can't read files outside their package.
-The copies are gitignored.
+The copies are gitignored. The Claude Code and Codex builds also turn each
+command into a skill, since that's how those hosts ship plugin commands.
 
 ## Workflow
 
@@ -51,7 +57,10 @@ uses Vitest on Node because oxlint's `RuleTester` refuses to run under Bun:
 Run a local plugin build in a host:
 
 - Claude Code: `claude --plugin-dir plugins/claude`
+- Codex CLI: follow the local development steps in
+  [`plugins/codex/README.md`](plugins/codex/README.md#local-development)
 - OpenCode: `"plugins": ["/path/to/enfect/plugins/opencode/dist"]`
+- Pi: `pi install --local /path/to/enfect/plugins/pi`
 
 ## Code Style
 
@@ -61,10 +70,12 @@ Run a local plugin build in a host:
 
 ## Releases
 
-The three published packages share one version. To release, bump `version` in
+The published packages share one version. To release, bump `version` in
 `plugins/claude/package.json`, `plugins/claude/.claude-plugin/plugin.json`,
-`plugins/opencode/package.json`, `plugins/oxlint/package.json`, and
-`plugins/oxlint/jsr.json`, then push to `main`. `test/release.test.ts` fails
+`plugins/codex/package.json`, `plugins/codex/.codex-plugin/plugin.json`, both
+version fields in `.agents/plugins/marketplace.json`,
+`plugins/opencode/package.json`, `plugins/oxlint/package.json`,
+`plugins/oxlint/jsr.json`, and `plugins/pi/package.json`, then push to `main`. `test/release.test.ts` fails
 if they drift. The publish workflow verifies the repository, publishes every
 package whose version isn't on npm yet, and publishes `@enfect/oxlint` to JSR.
 

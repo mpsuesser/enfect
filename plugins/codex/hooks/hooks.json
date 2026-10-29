@@ -1,0 +1,222 @@
+{
+  "description": "Inject complete Effect v4 guidance and review apply_patch edits",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v node >/dev/null 2>&1; then node \"${PLUGIN_ROOT}/dist/hook.mjs\" session-start 1 2>/dev/null || true; fi",
+            "timeout": 120,
+            "additionalContextLimit": 2500
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v node >/dev/null 2>&1; then node \"${PLUGIN_ROOT}/dist/hook.mjs\" session-start 2 2>/dev/null || true; fi",
+            "timeout": 30,
+            "additionalContextLimit": 2500
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v node >/dev/null 2>&1; then node \"${PLUGIN_ROOT}/dist/hook.mjs\" session-start 3 2>/dev/null || true; fi",
+            "timeout": 30,
+            "additionalContextLimit": 2500
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v node >/dev/null 2>&1; then node \"${PLUGIN_ROOT}/dist/hook.mjs\" session-start 4 2>/dev/null || true; fi",
+            "timeout": 30,
+            "additionalContextLimit": 2500
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v node >/dev/null 2>&1; then node \"${PLUGIN_ROOT}/dist/hook.mjs\" session-start 5 2>/dev/null || true; fi",
+            "timeout": 30,
+            "additionalContextLimit": 2500
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v node >/dev/null 2>&1; then node \"${PLUGIN_ROOT}/dist/hook.mjs\" session-start 6 2>/dev/null || true; fi",
+            "timeout": 30,
+            "additionalContextLimit": 2500
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v node >/dev/null 2>&1; then node \"${PLUGIN_ROOT}/dist/hook.mjs\" session-start 7 2>/dev/null || true; fi",
+            "timeout": 30,
+            "additionalContextLimit": 2500
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v node >/dev/null 2>&1; then node \"${PLUGIN_ROOT}/dist/hook.mjs\" session-start 8 2>/dev/null || true; fi",
+            "timeout": 30,
+            "additionalContextLimit": 2500
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v node >/dev/null 2>&1; then node \"${PLUGIN_ROOT}/dist/hook.mjs\" session-start 9 2>/dev/null || true; fi",
+            "timeout": 30,
+            "additionalContextLimit": 2500
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v node >/dev/null 2>&1; then node \"${PLUGIN_ROOT}/dist/hook.mjs\" session-start 10 2>/dev/null || true; fi",
+            "timeout": 30,
+            "additionalContextLimit": 2500
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v node >/dev/null 2>&1; then node \"${PLUGIN_ROOT}/dist/hook.mjs\" subagent-start 1 2>/dev/null || true; fi",
+            "timeout": 120,
+            "additionalContextLimit": 2500
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v node >/dev/null 2>&1; then node \"${PLUGIN_ROOT}/dist/hook.mjs\" subagent-start 2 2>/dev/null || true; fi",
+            "timeout": 30,
+            "additionalContextLimit": 2500
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v node >/dev/null 2>&1; then node \"${PLUGIN_ROOT}/dist/hook.mjs\" subagent-start 3 2>/dev/null || true; fi",
+            "timeout": 30,
+            "additionalContextLimit": 2500
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v node >/dev/null 2>&1; then node \"${PLUGIN_ROOT}/dist/hook.mjs\" subagent-start 4 2>/dev/null || true; fi",
+            "timeout": 30,
+            "additionalContextLimit": 2500
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v node >/dev/null 2>&1; then node \"${PLUGIN_ROOT}/dist/hook.mjs\" subagent-start 5 2>/dev/null || true; fi",
+            "timeout": 30,
+            "additionalContextLimit": 2500
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v node >/dev/null 2>&1; then node \"${PLUGIN_ROOT}/dist/hook.mjs\" subagent-start 6 2>/dev/null || true; fi",
+            "timeout": 30,
+            "additionalContextLimit": 2500
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v node >/dev/null 2>&1; then node \"${PLUGIN_ROOT}/dist/hook.mjs\" subagent-start 7 2>/dev/null || true; fi",
+            "timeout": 30,
+            "additionalContextLimit": 2500
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v node >/dev/null 2>&1; then node \"${PLUGIN_ROOT}/dist/hook.mjs\" subagent-start 8 2>/dev/null || true; fi",
+            "timeout": 30,
+            "additionalContextLimit": 2500
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v node >/dev/null 2>&1; then node \"${PLUGIN_ROOT}/dist/hook.mjs\" subagent-start 9 2>/dev/null || true; fi",
+            "timeout": 30,
+            "additionalContextLimit": 2500
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v node >/dev/null 2>&1; then node \"${PLUGIN_ROOT}/dist/hook.mjs\" subagent-start 10 2>/dev/null || true; fi",
+            "timeout": 30,
+            "additionalContextLimit": 2500
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^apply_patch$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v node >/dev/null 2>&1; then node \"${PLUGIN_ROOT}/dist/hook.mjs\" post-tool-use 2>/dev/null || true; fi",
+            "timeout": 30,
+            "additionalContextLimit": 2500
+          }
+        ]
+      }
+    ]
+  }
+}

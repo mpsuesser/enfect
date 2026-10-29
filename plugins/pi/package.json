@@ -1,0 +1,66 @@
+{
+  "name": "@enfect/pi",
+  "version": "0.9.0",
+  "description": "Effect v4 guidance, skills, and post-write pattern checks for Pi",
+  "keywords": [
+    "effect",
+    "effect-ts",
+    "pi-package",
+    "typescript"
+  ],
+  "homepage": "https://github.com/mpsuesser/enfect/tree/main/plugins/pi#readme",
+  "bugs": {
+    "url": "https://github.com/mpsuesser/enfect/issues"
+  },
+  "license": "MIT",
+  "author": "Marc Suesser",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mpsuesser/enfect.git",
+    "directory": "plugins/pi"
+  },
+  "files": [
+    "dist",
+    "commands",
+    "docs",
+    "guidance",
+    "patterns",
+    "skills"
+  ],
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "bun build src/index.ts --target=node --format=esm --external @ast-grep/napi --external '@earendil-works/pi-*' --outfile dist/index.js && bun ../../scripts/stage-catalogs.ts",
+    "prepack": "bun run build"
+  },
+  "dependencies": {
+    "@ast-grep/napi": "^0.42.3"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "1.4.0",
+    "@enfect/commands": "workspace:*",
+    "@enfect/core": "workspace:*",
+    "@enfect/guidance": "workspace:*",
+    "@enfect/patterns": "workspace:*",
+    "@enfect/skills": "workspace:*"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "pi": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "prompts": [
+      "./commands"
+    ]
+  }
+}

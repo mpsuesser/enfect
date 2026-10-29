@@ -31,6 +31,13 @@ To opt one agent out, set `"enfect": false` in that agent's configuration. The
 agent gets no guidance or pattern feedback, and the bundled skills are denied
 to it.
 
+## Commands
+
+Commands come from [`packages/commands`](../../packages/commands) and register
+through OpenCode's command API. Try `/enfect-hello-world Ada` to get
+`Hello, Ada!`. Text after the command name fills `$ARGUMENTS` before the
+plugin sends the prompt to the current session.
+
 ## Develop locally
 
 From the repository root, run `bun run build`, then point a config at the

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.0
+
+### Changed
+
+- Target Effect 4.1.0. The plugin now depends on `effect@4.1.0`.
+- Rule messages point to `FileSystem` and `Path` from `effect`, `SecureRandom`
+  and `Digest` from `effect/crypto`, and `ChildProcessSpawner` from
+  `effect/process`, replacing references to `effect/Crypto` and
+  `@effect/platform`.
+- Published to JSR again, as [`@enfect/oxlint`](https://jsr.io/@enfect/oxlint).
+
 ## 0.8.0
 
 Renamed from `@mpsuesser/oxlint-plugin-effect` and moved into the

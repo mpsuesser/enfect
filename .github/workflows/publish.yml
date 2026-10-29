@@ -37,7 +37,7 @@ jobs:
             - name: Publish unpublished package versions
               run: |
                   mkdir -p "$RUNNER_TEMP/packs"
-                  for directory in plugins/claude plugins/opencode plugins/oxlint; do
+                  for directory in plugins/claude plugins/codex plugins/opencode plugins/oxlint plugins/pi; do
                     NAME=$(node --print "require('./$directory/package.json').name")
                     VERSION=$(node --print "require('./$directory/package.json').version")
                     STATUS=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \

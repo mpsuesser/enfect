@@ -1,6 +1,6 @@
 {
   "name": "@enfect/opencode",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Effect v4 guidance, skills, and post-write pattern checks for OpenCode",
   "keywords": [
     "effect",
@@ -22,6 +22,7 @@
   },
   "files": [
     "dist",
+    "commands",
     "docs",
     "guidance",
     "patterns",
@@ -38,9 +39,10 @@
   },
   "dependencies": {
     "@ast-grep/napi": "^0.42.3",
-    "@opencode/plugin": "2.0.8"
+    "@opencode/plugin": "2.2.1"
   },
   "devDependencies": {
+    "@enfect/commands": "workspace:*",
     "@enfect/core": "workspace:*",
     "@enfect/guidance": "workspace:*",
     "@enfect/patterns": "workspace:*",

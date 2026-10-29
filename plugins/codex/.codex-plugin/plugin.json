@@ -1,0 +1,20 @@
+{
+  "name": "enfect",
+  "version": "0.9.0",
+  "description": "Effect v4 guidance, skills, and advisory post-write pattern checks for Codex CLI",
+  "author": {
+    "name": "Marc Suesser"
+  },
+  "homepage": "https://github.com/mpsuesser/enfect",
+  "repository": "https://github.com/mpsuesser/enfect",
+  "license": "MIT",
+  "keywords": ["effect", "effect-ts", "typescript"],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "displayName": "Enfect",
+    "shortDescription": "Effect v4 guidance and pattern checks",
+    "developerName": "Marc Suesser",
+    "category": "Developer Tools"
+  }
+}

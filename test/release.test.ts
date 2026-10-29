@@ -5,6 +5,13 @@ interface Manifest {
 	readonly version: string;
 	readonly dependencies?: Readonly<Record<string, string>>;
 	readonly imports?: Readonly<Record<string, string>>;
+	readonly plugins?: ReadonlyArray<{
+		readonly version?: string;
+		readonly source?: {
+			readonly package?: string;
+			readonly version?: string;
+		};
+	}>;
 	readonly workspaces?: {
 		readonly catalog: Readonly<Record<string, string>>;
 	};
@@ -21,14 +28,32 @@ describe('release manifests', () => {
 			[
 				'plugins/claude/package.json',
 				'plugins/claude/.claude-plugin/plugin.json',
+				'plugins/codex/package.json',
+				'plugins/codex/.codex-plugin/plugin.json',
 				'plugins/opencode/package.json',
 				'plugins/oxlint/package.json',
-				'plugins/oxlint/jsr.json'
+				'plugins/oxlint/jsr.json',
+				'plugins/pi/package.json'
 			].map(manifest)
 		);
 		const [claude] = manifests;
 		manifests.forEach(({ version }) => {
 			expect(version).toBe(claude?.version ?? '');
+		});
+	});
+
+	it('pin the Codex marketplace to the package version', async () => {
+		const [marketplace, codex] = await Promise.all([
+			manifest('.agents/plugins/marketplace.json'),
+			manifest('plugins/codex/package.json')
+		]);
+		expect(
+			marketplace.plugins?.find(
+				(entry) => entry.source?.package === '@enfect/codex'
+			)
+		).toMatchObject({
+			version: codex.version,
+			source: { version: codex.version }
 		});
 	});
 
