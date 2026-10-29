@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `no-cause-in-http-response`: flag `Cause.pretty`/`Cause.squash`, or a caught `catch`/`catchAll`/`catchCause`/`catchAllCause` cause/error binding (directly, via `.message`, `String(...)`, or template interpolation), flowing into an HTTP response body built with `HttpServerResponse.text`/`json`/`html`/`raw`/`unsafeJson` or `new Response(...)`. Motivated by a real bug where a BetterAuth failure handler rendered `Cause.pretty(cause)` straight into a 500 response body. Server-side logging such as `Effect.logError(Cause.pretty(cause))` is untouched. Both generated presets now enable all 74 rules.
+
 ## 0.6.0 - Stable Effect 4.0.0
 
 ### Changed

@@ -30,6 +30,7 @@ import effectRunInBody from './rules/effect-run-in-body.ts';
 import imperativeLoops from './rules/imperative-loops.ts';
 import maybePrefixRequiresOption from './rules/maybe-prefix-requires-option.ts';
 import noBarrelImports from './rules/no-barrel-imports.ts';
+import noCauseInHttpResponse from './rules/no-cause-in-http-response.ts';
 import noChainedTypeAssertions from './rules/no-chained-type-assertions.ts';
 import noConditionalEmptyObjectSpread from './rules/no-conditional-empty-object-spread.ts';
 import noKnownValueWidening from './rules/no-known-value-widening.ts';
@@ -143,6 +144,7 @@ const rules: Record<string, CreateRule> = {
 	'avoid-expect-in-if': avoidExpectInIf,
 	'avoid-yield-ref': avoidYieldRef,
 	'effect-catchall-default': effectCatchallDefault,
+	'no-cause-in-http-response': noCauseInHttpResponse,
 	'avoid-direct-tag-checks': avoidDirectTagChecks,
 	'vm-in-wrong-file': vmInWrongFile,
 	'use-temp-file-scoped': useTempFileScoped,

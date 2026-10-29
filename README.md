@@ -6,7 +6,7 @@
 
 An opinionated [oxlint](https://oxc.rs/docs/guide/usage/linter) plugin for [Effect v4](https://effect.website) that drives every module toward Effect services, typed error channels, and functional composition. It flags imperative patterns, raw Node APIs, untyped errors, and other non-idiomatic shapes at the lint layer so they never make it into review.
 
-The plugin ships **73 rules** namespaced under `effect/`, including all 16 rules from [`dmmulroy/anti-slop`](https://github.com/dmmulroy/anti-slop). Rules are implemented with the [`effect-oxlint`](https://github.com/mpsuesser/effect-oxlint) SDK and run as standard oxlint custom rules.
+The plugin ships **74 rules** namespaced under `effect/`, including all 16 rules from [`dmmulroy/anti-slop`](https://github.com/dmmulroy/anti-slop). Rules are implemented with the [`effect-oxlint`](https://github.com/mpsuesser/effect-oxlint) SDK and run as standard oxlint custom rules.
 
 The runtime and recommendations target **Effect 4.0.0 (stable)**. Area imports use
 `effect/http`, `effect/http-api`, `effect/process`, etc.; the old `unstable` paths
@@ -35,7 +35,7 @@ export default defineConfig({
 });
 ```
 
-`configs.recommended` registers the package through oxlint's `jsPlugins` field and enables all 73 rules at `error` severity. `configs.all` also includes every rule.
+`configs.recommended` registers the package through oxlint's `jsPlugins` field and enables all 74 rules at `error` severity. `configs.all` also includes every rule.
 
 To override an individual rule, add a `rules` entry after the `extends` block:
 
@@ -186,6 +186,7 @@ than the lowercase `object` parameter contract. Configure each independently.
 | [`imperative-loops`](#imperative-loops)                                                               | `for` / `while` / `do…while` in domain code                                      |
 | [`maybe-prefix-requires-option`](#maybe-prefix-requires-option)                                       | `maybe*` named field that is not an `Option<T>`                                  |
 | [`no-barrel-imports`](#no-barrel-imports)                                                             | Named imports from the `effect` barrel package                                   |
+| [`no-cause-in-http-response`](#no-cause-in-http-response)                                             | `Cause.pretty`/`Cause.squash`/caught cause or error flowing into a response body |
 | [`no-effect-ignore-then-as`](#no-effect-ignore-then-as)                                               | Redundant `Effect.ignore` before `Effect.as`, or on known infallible primitives  |
 | [`no-length-comparison`](#no-length-comparison)                                                       | `.length === 0` and friends — use named string/array predicates                  |
 | [`no-opaque-instance-fields`](#no-opaque-instance-fields)                                             | Instance members on `Schema.Opaque` classes                                      |
@@ -1114,6 +1115,22 @@ Manual `.length === 0`, `.length > 0`, and related checks hide whether the value
 ### `require-is-prefix-for-boolean-schema-field`
 
 Boolean Schema fields should read as predicates at call sites. Use prefixes such as `is*`, `has*`, `can*`, `should*`, `was*`, or `will*` for `Schema.Boolean` fields.
+
+### `no-cause-in-http-response`
+
+`Cause.pretty`/`Cause.squash` render full failure detail — defect stack traces, decode internals — as text. Rendering that (or a caught cause/error binding, directly, via `.message`, `String(...)`, or template interpolation) into an HTTP response body turns an internal failure into an information disclosure. Log the cause server-side and return a generic body instead.
+
+```ts
+// ❌
+const failureResponse = (cause: Cause.Cause<unknown>) =>
+	HttpServerResponse.text(Cause.pretty(cause), { status: 500 });
+
+// ✅
+const failureResponse = (cause: Cause.Cause<unknown>) =>
+	Effect.logError(`Request failed: ${Cause.pretty(cause)}`).pipe(
+		Effect.as(HttpServerResponse.text('Internal error.', { status: 500 }))
+	);
+```
 
 ## Suppression
 
