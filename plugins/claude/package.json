@@ -1,0 +1,49 @@
+{
+  "name": "@enfect/claude",
+  "version": "0.8.0",
+  "description": "Effect v4 guidance, skills, and post-write pattern checks for Claude Code",
+  "keywords": [
+    "claude-code",
+    "claude-code-plugin",
+    "effect",
+    "effect-ts",
+    "typescript"
+  ],
+  "homepage": "https://github.com/mpsuesser/enfect/tree/main/plugins/claude#readme",
+  "bugs": {
+    "url": "https://github.com/mpsuesser/enfect/issues"
+  },
+  "license": "MIT",
+  "author": "Marc Suesser",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mpsuesser/enfect.git",
+    "directory": "plugins/claude"
+  },
+  "files": [
+    ".claude-plugin",
+    "hooks",
+    "dist",
+    "docs",
+    "guidance",
+    "patterns",
+    "skills"
+  ],
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "bun build src/hook.ts --target=node --format=esm --external @ast-grep/napi --outfile dist/hook.mjs && bun ../../scripts/stage-catalogs.ts",
+    "prepack": "bun run build"
+  },
+  "dependencies": {
+    "@ast-grep/napi": "^0.42.3"
+  },
+  "devDependencies": {
+    "@enfect/core": "workspace:*",
+    "@enfect/guidance": "workspace:*",
+    "@enfect/patterns": "workspace:*",
+    "@enfect/skills": "workspace:*"
+  }
+}

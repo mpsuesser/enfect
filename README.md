@@ -6,15 +6,24 @@ Enfect keeps Effect v4 conventions in front of coding agents and in your lint
 step. One repository publishes three plugins built from the same guidance,
 skills, and rules:
 
-| Package                                   | For         | What it does                                                                                     |
-| ----------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------ |
-| [`@enfect/claude`](packages/claude)       | Claude Code | Adds Effect guidance to every session and subagent, bundles 54 skills, and reviews writes        |
-| [`@enfect/opencode`](packages/opencode)   | OpenCode    | Adds Effect guidance to every model call, bundles 54 skills, and reviews writes                  |
-| [`@enfect/oxlint`](packages/oxlint)       | oxlint      | 74 lint rules that flag non-idiomatic Effect code in your editor and CI                          |
+| Package                                | For         | What it does                                                                              |
+| -------------------------------------- | ----------- | ----------------------------------------------------------------------------------------- |
+| [`@enfect/claude`](plugins/claude)     | Claude Code | Adds Effect guidance to every session and subagent, bundles 54 skills, and reviews writes |
+| [`@enfect/opencode`](plugins/opencode) | OpenCode    | Adds Effect guidance to every model call, bundles 54 skills, and reviews writes           |
+| [`@enfect/oxlint`](plugins/oxlint)     | oxlint      | 74 lint rules that flag non-idiomatic Effect code in your editor and CI                   |
 
-The agent plugins share their content through
-[`packages/core`](packages/core), which lists every guidance document, skill,
-and pattern. Everything targets **Effect `4.0.6` (stable)**.
+The agent plugins share their content, which lives in private workspace
+packages:
+
+- [`packages/guidance`](packages/guidance): the documents added to every
+  session, plus the Effect release audits
+- [`packages/skills`](packages/skills): the 54 skills
+- [`packages/patterns`](packages/patterns): the 45 post-write checks and their
+  tests
+- [`packages/core`](packages/core): the code that loads the catalogs and
+  matches patterns
+
+Everything targets **Effect `4.0.6` (stable)**.
 
 ## How the agent plugins help
 
@@ -36,6 +45,8 @@ Install the lint rules:
 ```sh
 bun add -D oxlint @enfect/oxlint
 ```
+
+`@enfect/oxlint` is also on [JSR](https://jsr.io/@enfect/oxlint).
 
 ```json
 {

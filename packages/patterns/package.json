@@ -1,0 +1,15 @@
+{
+  "name": "@enfect/patterns",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Post-write Effect pattern checks run by the Enfect agent plugins",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./testing": "./test/helpers/patterns.ts"
+  },
+  "devDependencies": {
+    "@ast-grep/napi": "^0.42.3",
+    "@enfect/core": "workspace:*"
+  }
+}

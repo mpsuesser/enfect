@@ -2,10 +2,9 @@
   "name": "@enfect/core",
   "version": "0.0.0",
   "private": true,
-  "description": "Effect guidance, skills, patterns, and pattern matching shared by the Enfect agent plugins",
+  "description": "Catalog loading, pattern matching, and feedback shared by the Enfect agent plugins",
   "type": "module",
   "exports": {
-    "./testing": "./test/helpers/patterns.ts",
     "./*": "./src/*.ts"
   },
   "dependencies": {
@@ -15,14 +14,8 @@
     "yaml": "^2.8.1"
   },
   "devDependencies": {
-    "@effect/ai-openrouter": "catalog:",
-    "@effect/ai-typesafe": "catalog:",
-    "@effect/platform-bun": "catalog:",
-    "@effect/platform-node": "catalog:",
-    "@effect/platform-node-shared": "catalog:",
     "@types/diff": "^8.0.0",
     "@types/json-schema": "^7.0.15",
-    "@types/picomatch": "^4.0.2",
-    "effect": "catalog:"
+    "@types/picomatch": "^4.0.2"
   }
 }

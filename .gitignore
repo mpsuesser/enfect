@@ -5,14 +5,14 @@ coverage/
 *.tsbuildinfo
 .DS_Store
 
-# Copied from packages/core by each plugin's build
-packages/claude/docs/
-packages/claude/guidance/
-packages/claude/patterns/
-packages/claude/skills/
-packages/claude/LICENSE
-packages/opencode/docs/
-packages/opencode/guidance/
-packages/opencode/patterns/
-packages/opencode/skills/
-packages/opencode/LICENSE
+# Copied from packages/{guidance,patterns,skills} by each agent plugin's build
+plugins/claude/docs/
+plugins/claude/guidance/
+plugins/claude/patterns/
+plugins/claude/skills/
+plugins/claude/LICENSE
+plugins/opencode/docs/
+plugins/opencode/guidance/
+plugins/opencode/patterns/
+plugins/opencode/skills/
+plugins/opencode/LICENSE

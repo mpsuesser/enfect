@@ -11,12 +11,16 @@ const LEVEL_ORDER: Record<Pattern.Value['level'], number> = {
 	info: 4
 };
 
+/** Whether a guidance directory entry is a document rather than its README. */
+export const isGuidanceDocument = (entry: string): boolean =>
+	entry.endsWith('.md') && entry !== 'README.md';
+
 /** Load bundled guidance documents in deterministic filename order. */
 export const loadGuidance = async (
 	guidanceDirectory: string
 ): Promise<string> => {
 	const entries = (await readdir(guidanceDirectory))
-		.filter((entry) => entry.endsWith('.md'))
+		.filter(isGuidanceDocument)
 		.toSorted();
 	const documents = (
 		await Promise.all(

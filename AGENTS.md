@@ -5,24 +5,23 @@ sources. See `CONTRIBUTING.md` for the layout and commands.
 
 ## Source of truth
 
-- `packages/core/guidance/`, `skills/`, `patterns/`, `docs/`: the only copies.
-  Never edit the copies that builds place in `packages/claude` or
-  `packages/opencode`.
+- `packages/guidance/`, `packages/skills/`, `packages/patterns/`: the only
+  copies of the catalogs. Never edit the copies that builds place in
+  `plugins/claude` or `plugins/opencode`.
 - `packages/core/src/`: host-independent catalog loading, matching, write
   projection, and feedback. Host-specific behavior belongs in an adapter.
-- `packages/claude/src/hook.ts`: Claude Code hook entrypoint, bundled to
+- `plugins/claude/src/hook.ts`: Claude Code hook entrypoint, bundled to
   `dist/hook.mjs`. `hooks/hooks.json` declares one SessionStart and one
   SubagentStart entry per guidance part.
-- `packages/opencode/src/index.ts`: OpenCode V2 composition root, bundled to
+- `plugins/opencode/src/index.ts`: OpenCode V2 composition root, bundled to
   `dist/index.js`.
-- `packages/oxlint/src/`: oxlint rules, one file per rule.
+- `plugins/oxlint/src/`: oxlint rules, one file per rule.
 
 Keep `@ast-grep/napi` out of the plugin bundles, and load it only through
 `packages/core/src/ast-grep.ts`. Installed Claude Code plugins have no
 `node_modules`, so the hook installs it into the plugin data directory.
 
-Keep the versions in the three published `package.json` files and
-`packages/claude/.claude-plugin/plugin.json` equal.
+Keep the published versions equal; `test/release.test.ts` lists the manifests.
 
 ## Verification
 
@@ -30,10 +29,10 @@ Keep the versions in the three published `package.json` files and
 bun run build
 bun run check
 bun run test
-claude plugin validate packages/claude --strict
+claude plugin validate plugins/claude --strict
 claude plugin validate . --strict
 ```
 
 Pattern changes must preserve the inventory enforced by
-`packages/core/test/all-patterns-covered.test.ts`. Every skill, pattern, and
-guidance document must stay linked from `packages/core/README.md`.
+`packages/patterns/test/all-patterns-covered.test.ts`. Every guidance document,
+skill, and pattern must stay linked from its package README.

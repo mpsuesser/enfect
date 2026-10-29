@@ -1,0 +1,10 @@
+{
+  "name": "@enfect/guidance",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Effect guidance documents that the Enfect agent plugins add to every session",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  }
+}

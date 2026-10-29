@@ -3,7 +3,8 @@
   "private": true,
   "workspaces": {
     "packages": [
-      "packages/*"
+      "packages/*",
+      "plugins/*"
     ],
     "catalog": {
       "@effect/ai-openrouter": "4.0.6",
@@ -17,7 +18,7 @@
   },
   "type": "module",
   "scripts": {
-    "build": "bun run --filter './packages/*' build",
+    "build": "bun run --filter './plugins/*' build",
     "check": "bun run fmt:check && bun run lint && bun run typecheck",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
@@ -27,9 +28,15 @@
     "prepare": "effect-tsgo patch"
   },
   "devDependencies": {
+    "@effect/ai-openrouter": "catalog:",
+    "@effect/ai-typesafe": "catalog:",
+    "@effect/platform-bun": "catalog:",
+    "@effect/platform-node": "catalog:",
+    "@effect/platform-node-shared": "catalog:",
     "@effect/tsgo": "^0.11.0",
     "@types/bun": "^1.4.4",
     "@typescript/native-preview": "^7.0.0-dev.20260523.1",
+    "effect": "catalog:",
     "oxfmt": "^0.75.0",
     "oxlint": "1.85.0",
     "oxlint-tsgolint": "^7.0.2005",

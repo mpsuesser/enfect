@@ -1,0 +1,23 @@
+{
+  "name": "@enfect/oxlint",
+  "version": "0.8.0",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "imports": {
+    "@oxlint/plugins": "npm:@oxlint/plugins@^1.85.0",
+    "effect": "npm:effect@4.0.6",
+    "effect/": "npm:/effect@4.0.6/",
+    "effect-oxlint": "npm:effect-oxlint@^0.4.0"
+  },
+  "publish": {
+    "include": [
+      "LICENSE",
+      "licenses/**",
+      "README.md",
+      "CHANGELOG.md",
+      "src/**/*.ts"
+    ]
+  }
+}

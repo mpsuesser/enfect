@@ -13,8 +13,8 @@
   "ignorePatterns": [
     "*.md",
     "dist/",
-    "packages/core/skills/",
-    "packages/core/docs/"
+    "packages/skills/",
+    "packages/guidance/docs/"
   ],
   "overrides": [
     {

@@ -136,7 +136,8 @@ export const loadPatterns = async (
 				const target = path.join(directory, entry);
 				try {
 					const info = await stat(target);
-					if (info.isDirectory()) return walk(target);
+					if (info.isDirectory())
+						return entry === 'node_modules' ? [] : walk(target);
 					if (
 						!info.isFile() ||
 						!entry.endsWith('.md') ||

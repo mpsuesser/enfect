@@ -5,23 +5,19 @@
     "": {
       "name": "enfect",
       "devDependencies": {
+        "@effect/ai-openrouter": "catalog:",
+        "@effect/ai-typesafe": "catalog:",
+        "@effect/platform-bun": "catalog:",
+        "@effect/platform-node": "catalog:",
+        "@effect/platform-node-shared": "catalog:",
         "@effect/tsgo": "^0.11.0",
         "@types/bun": "^1.4.4",
         "@typescript/native-preview": "^7.0.0-dev.20260523.1",
+        "effect": "catalog:",
         "oxfmt": "^0.75.0",
         "oxlint": "1.85.0",
         "oxlint-tsgolint": "^7.0.2005",
         "typescript": "^6.0.3",
-      },
-    },
-    "packages/claude": {
-      "name": "@enfect/claude",
-      "version": "0.8.0",
-      "dependencies": {
-        "@ast-grep/napi": "^0.42.3",
-      },
-      "devDependencies": {
-        "@enfect/core": "workspace:*",
       },
     },
     "packages/core": {
@@ -34,18 +30,41 @@
         "yaml": "^2.8.1",
       },
       "devDependencies": {
-        "@effect/ai-openrouter": "catalog:",
-        "@effect/ai-typesafe": "catalog:",
-        "@effect/platform-bun": "catalog:",
-        "@effect/platform-node": "catalog:",
-        "@effect/platform-node-shared": "catalog:",
         "@types/diff": "^8.0.0",
         "@types/json-schema": "^7.0.15",
         "@types/picomatch": "^4.0.2",
-        "effect": "catalog:",
       },
     },
-    "packages/opencode": {
+    "packages/guidance": {
+      "name": "@enfect/guidance",
+      "version": "0.0.0",
+    },
+    "packages/patterns": {
+      "name": "@enfect/patterns",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@ast-grep/napi": "^0.42.3",
+        "@enfect/core": "workspace:*",
+      },
+    },
+    "packages/skills": {
+      "name": "@enfect/skills",
+      "version": "0.0.0",
+    },
+    "plugins/claude": {
+      "name": "@enfect/claude",
+      "version": "0.8.0",
+      "dependencies": {
+        "@ast-grep/napi": "^0.42.3",
+      },
+      "devDependencies": {
+        "@enfect/core": "workspace:*",
+        "@enfect/guidance": "workspace:*",
+        "@enfect/patterns": "workspace:*",
+        "@enfect/skills": "workspace:*",
+      },
+    },
+    "plugins/opencode": {
       "name": "@enfect/opencode",
       "version": "0.8.0",
       "dependencies": {
@@ -54,9 +73,12 @@
       },
       "devDependencies": {
         "@enfect/core": "workspace:*",
+        "@enfect/guidance": "workspace:*",
+        "@enfect/patterns": "workspace:*",
+        "@enfect/skills": "workspace:*",
       },
     },
-    "packages/oxlint": {
+    "plugins/oxlint": {
       "name": "@enfect/oxlint",
       "version": "0.8.0",
       "dependencies": {
@@ -180,13 +202,19 @@
 
     "@effect/vitest": ["@effect/vitest@4.0.6", "", { "peerDependencies": { "effect": "^4.0.6", "vitest": ">=5.0.0 <6.0.0" } }, "sha512-oKNbtyUHK5+0o730CXwojULEu7f3+c235pYFD4U5T//o+hHrJbYbZU4bRkcv936tPr5IOnmujeyQiC/LuJJjHw=="],
 
-    "@enfect/claude": ["@enfect/claude@workspace:packages/claude"],
+    "@enfect/claude": ["@enfect/claude@workspace:plugins/claude"],
 
     "@enfect/core": ["@enfect/core@workspace:packages/core"],
 
-    "@enfect/opencode": ["@enfect/opencode@workspace:packages/opencode"],
+    "@enfect/guidance": ["@enfect/guidance@workspace:packages/guidance"],
 
-    "@enfect/oxlint": ["@enfect/oxlint@workspace:packages/oxlint"],
+    "@enfect/opencode": ["@enfect/opencode@workspace:plugins/opencode"],
+
+    "@enfect/oxlint": ["@enfect/oxlint@workspace:plugins/oxlint"],
+
+    "@enfect/patterns": ["@enfect/patterns@workspace:packages/patterns"],
+
+    "@enfect/skills": ["@enfect/skills@workspace:packages/skills"],
 
     "@gar/promise-retry": ["@gar/promise-retry@1.0.3", "", {}, "sha512-GmzA9ckNokPypTg10pgpeHNQe7ph+iIKKmhKu3Ob9ANkswreCx7R3cKmY781K8QK3AqVL3xVh9A42JvIAbkkSA=="],
 

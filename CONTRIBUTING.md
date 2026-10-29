@@ -17,15 +17,21 @@ bun install
 
 ```
 .claude-plugin/marketplace.json   Claude Code marketplace; installs @enfect/claude from npm
-packages/
-  core/       private: guidance, skills, patterns, release docs, and matching code
+plugins/                          published packages, one per host
   claude/     @enfect/claude: Claude Code plugin manifest, hooks, and hook entrypoint
   opencode/   @enfect/opencode: OpenCode V2 plugin
-  oxlint/     @enfect/oxlint: oxlint rules and presets
+  oxlint/     @enfect/oxlint: oxlint rules and presets (npm and JSR)
+packages/                         private workspace packages shared by the agent plugins
+  core/       catalog loading, pattern matching, write projection, and feedback
+  guidance/   documents added to every session, plus Effect release audits in docs/
+  patterns/   post-write checks, one Markdown file and one test each
+  skills/     one directory per skill, each with a SKILL.md
+scripts/      stage-catalogs.ts: copies the catalogs into an agent plugin's build
+test/         cross-package checks: catalog READMEs, Effect release alignment, versions
 ```
 
-Edit guidance, skills, and patterns only in `packages/core`. The Claude Code
-and OpenCode builds bundle the core code and copy those catalogs into their own
+Edit guidance, skills, and patterns only in `packages/`. The Claude Code and
+OpenCode builds bundle the core code and copy the catalogs into their own
 package, because installed plugins can't read files outside their package.
 The copies are gitignored.
 
@@ -38,14 +44,14 @@ bun run fmt     # format in place
 bun run test    # bun test, then Vitest for @enfect/oxlint
 ```
 
-Run one package's Bun tests with `bun test packages/core`. `@enfect/oxlint`
+Run one directory's Bun tests with, for example, `bun test packages/patterns`. `@enfect/oxlint`
 uses Vitest on Node because oxlint's `RuleTester` refuses to run under Bun:
 `bun run --filter @enfect/oxlint test`.
 
 Run a local plugin build in a host:
 
-- Claude Code: `claude --plugin-dir packages/claude`
-- OpenCode: `"plugins": ["/path/to/enfect/packages/opencode/dist"]`
+- Claude Code: `claude --plugin-dir plugins/claude`
+- OpenCode: `"plugins": ["/path/to/enfect/plugins/opencode/dist"]`
 
 ## Code Style
 
@@ -56,7 +62,12 @@ Run a local plugin build in a host:
 ## Releases
 
 The three published packages share one version. To release, bump `version` in
-`packages/claude/package.json`, `packages/claude/.claude-plugin/plugin.json`,
-`packages/opencode/package.json`, and `packages/oxlint/package.json`, then
-push to `main`. The publish workflow verifies the repository and publishes
-every package whose version isn't on npm yet.
+`plugins/claude/package.json`, `plugins/claude/.claude-plugin/plugin.json`,
+`plugins/opencode/package.json`, `plugins/oxlint/package.json`, and
+`plugins/oxlint/jsr.json`, then push to `main`. `test/release.test.ts` fails
+if they drift. The publish workflow verifies the repository, publishes every
+package whose version isn't on npm yet, and publishes `@enfect/oxlint` to JSR.
+
+`plugins/oxlint/jsr.json` maps the rule sources' bare imports to npm versions,
+because JSR can't read `catalog:` specifiers. Keep it in step with
+`plugins/oxlint/package.json` and the root catalog; the release test checks it.

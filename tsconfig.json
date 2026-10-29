@@ -18,7 +18,7 @@
         "diagnostics": true,
         "overrides": [
           {
-            "include": ["packages/oxlint/src/**/*.ts"],
+            "include": ["plugins/oxlint/src/**/*.ts"],
             "options": {
               "diagnosticSeverity": {
                 "floatingEffect": "error"
@@ -37,6 +37,6 @@
     "useUnknownInCatchVariables": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["packages/*/src", "packages/*/test", "packages/*/scripts"],
-  "exclude": ["**/node_modules", "packages/oxlint/test/violations.ts"]
+  "include": ["packages", "plugins", "scripts", "test"],
+  "exclude": ["**/node_modules", "**/dist", "plugins/oxlint/test/violations.ts"]
 }
