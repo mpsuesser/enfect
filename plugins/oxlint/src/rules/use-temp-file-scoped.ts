@@ -72,10 +72,10 @@ const matchUnscopedTempMember = (
 // ---------------------------------------------------------------------------
 
 const IMPORT_MESSAGE =
-	'Avoid `os` / `node:os` — use `FileSystem.makeTempFileScoped` from `@effect/platform` for scoped temp files with automatic cleanup.';
+	'Avoid `os` / `node:os` — use `FileSystem.makeTempFileScoped` from `effect` for scoped temp files with automatic cleanup.';
 
 const TMPDIR_MESSAGE =
-	'Avoid `os.tmpdir()` — use `FileSystem.makeTempFileScoped` from `@effect/platform` for scoped temp files with automatic cleanup.';
+	'Avoid `os.tmpdir()` — use `FileSystem.makeTempFileScoped` from `effect` for scoped temp files with automatic cleanup.';
 
 const unscopedMessage = (api: string): string =>
 	`Avoid \`${api}\` — the unscoped variant requires manual cleanup. Use \`${api}Scoped\` so the resource is finalized when its scope closes.`;

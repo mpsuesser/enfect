@@ -10,8 +10,8 @@ Design and implement Effect services as focused capabilities that compose into c
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Baseline: **effect@4.0.6 stable**. Read source via
-`git show effect@4.0.6:<path>` rather than newer main.
+Baseline: **effect@4.1.0 stable**. Read source via
+`git show effect@4.1.0:<path>` rather than newer main.
 
 Reference this for:
 
@@ -137,7 +137,8 @@ If the project already standardizes class statics or another current Effect v4 t
 
 <!-- typecheck -->
 ```typescript
-import { Context, Crypto, Effect, Layer } from 'effect';
+import { Context, Effect, Layer } from 'effect';
+import { SecureRandom } from 'effect/crypto';
 import { NodeCrypto } from '@effect/platform-node';
 
 export class IdGenerator extends Context.Service<
@@ -147,20 +148,18 @@ export class IdGenerator extends Context.Service<
 	}
 >()('@services/IdGenerator', {
 	make: Effect.gen(function* () {
-		const crypto = yield* Crypto.Crypto;
-		// `randomUUIDv4` fails with PlatformError; UUID generation is
-		// unrecoverable here, so collapse it into a defect with `Effect.orDie`.
-		return { generate: crypto.randomUUIDv4().pipe(Effect.orDie) };
+		const crypto = yield* SecureRandom.SecureRandom;
+		return { generate: crypto.uuidV4() };
 	})
 }) {
 	static readonly layer = Layer.effect(this, this.make);
 	static readonly defaultLayer = this.layer.pipe(
-		Layer.provide(NodeCrypto.layer)
+		Layer.provide(NodeCrypto.layerSecureRandom)
 	);
 }
 ```
 
-Do not introduce this alternative into a project that has no convention. In that case prefer the ES-module projection pattern, including for small services. Provide a platform `Crypto` implementation such as `NodeCrypto.layer` at the app edge; here `defaultLayer` wires it.
+Do not introduce this alternative into a project that has no convention. In that case prefer the ES-module projection pattern, including for small services. Provide a platform `SecureRandom` implementation such as `NodeCrypto.layerSecureRandom` at the app edge; here `defaultLayer` wires it.
 
 Function-style keys are also current Effect v4. If a project standardizes them, a service module can retain a file-local role such as `export const Service = Context.Service<Interface>('@services/IdGenerator')`; use the resulting key exactly as the project does rather than rewriting it as a class.
 
@@ -424,13 +423,18 @@ Prefer one or two readable transforms over a long wrapper pipeline. These transf
 
 Update Effect callers to use the project's domain projection, such as `yield* UserRepo.Service`, as early as possible once the service exists. Keep async facades only for non-Effect boundaries that still need compatibility.
 
+`Effect.fnUntraced` and `Effect.fnUntracedEager` accept `{ self }` before the
+generator body to bind `this`, matching `Effect.fn`. Use this for existing
+receiver-dependent methods; module-level service functions usually need no binding.
+
 ## Pattern: Leaf Services with a Platform Dependency
 
-Even a small "leaf" service often needs a platform capability such as cryptographic UUID generation. Use the platform-agnostic `Crypto` service instead of the global `crypto.randomUUID`, capture it in `Layer.effect`, and wire a concrete implementation (e.g. `NodeCrypto.layer`) in `defaultLayer`:
+Even a small "leaf" service often needs a platform capability such as cryptographic UUID generation. Use the platform-agnostic `SecureRandom` service instead of the global `crypto.randomUUID`, capture it in `Layer.effect`, and wire a concrete implementation (e.g. `NodeCrypto.layerSecureRandom`) in `defaultLayer`:
 
 ```typescript
 // id-generator.ts
-import { Context, Crypto, Effect, Layer } from 'effect';
+import { Context, Effect, Layer } from 'effect';
+import { SecureRandom } from 'effect/crypto';
 import { NodeCrypto } from '@effect/platform-node';
 
 export interface Interface {
@@ -444,25 +448,23 @@ export class Service extends Context.Service<Service, Interface>()(
 export const layer = Layer.effect(
 	Service,
 	Effect.gen(function* () {
-		const crypto = yield* Crypto.Crypto;
-		// UUID generation failure is unrecoverable here, so collapse the
-		// PlatformError into a defect at this boundary with `Effect.orDie`.
+		const crypto = yield* SecureRandom.SecureRandom;
 		return Service.of({
-			generate: crypto.randomUUIDv4().pipe(Effect.orDie)
+			generate: crypto.uuidV4()
 		});
 	})
 );
 
-export const defaultLayer = layer.pipe(Layer.provide(NodeCrypto.layer));
+export const defaultLayer = layer.pipe(Layer.provide(NodeCrypto.layerSecureRandom));
 
 export * as IdGenerator from './id-generator.js';
 ```
 
 A genuinely dependency-free service can still keep `layer` self-contained with `Layer.succeed` and skip `defaultLayer` (see the rule of thumb below).
 
-In 4.0.6, UUID generation is a **method**: `randomUUIDv4()` / `randomUUIDv7()`
+In 4.1.0, UUID generation is a **method**: `uuidV4()` / `uuidV7()`
 return the default hyphenated string; `{ format: 'bytes' }` selects 16 UUID bytes.
-These `Crypto` APIs remain `@stability unstable`.
+These `SecureRandom` APIs remain `@stability unstable`.
 
 ## Pattern: Composing Capabilities
 

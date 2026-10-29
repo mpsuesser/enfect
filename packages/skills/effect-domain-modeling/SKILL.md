@@ -13,8 +13,8 @@ and `effect-typeclass-design` for reusable predicate/order APIs.
 
 ## Source Reference
 
-Baseline: **Effect 4.0.6**. In the Effect source reference, read exact-tag files
-with `git show effect@4.0.6:<path>`; main may be newer. Consult
+Baseline: **Effect 4.1.0**. In the Effect source reference, read exact-tag files
+with `git show effect@4.1.0:<path>`; main may be newer. Consult
 `packages/effect/SCHEMA.md` and `packages/effect/src/{Schema,Match,DateTime,Order}.ts`.
 Verify the installed version and source tag before applying newer APIs.
 
@@ -169,14 +169,14 @@ message. Never claim the invariant is enforced solely because fields use
   unknown input; do not duplicate a schema model with a parallel Data union.
 - Use `.match` for exhaustiveness. Use `.matchOrElse(cases, fallback)` or
   `.matchOrElse(value, cases, fallback)` when one fallback truthfully handles all
-  other cases. The fallback from `toTaggedUnion` is narrowed to unmatched
-  variants; direct `Schema.TaggedUnion.matchOrElse` types it as the full union.
+  other cases. Both forms narrow the fallback to unmatched variants. Annotate handler
+  return types instead of supplying explicit output type arguments.
 - TypeScript does narrow literal discriminator checks. The preference for schema
   matching is about exhaustiveness and reuse, not a compiler limitation.
 
 Both schema union forms expose `.tag` with their discriminator key. Duplicate
 discriminants are rejected at runtime, including nested unions and numeric/string
-collisions (`1` and `'1'`). Effect 4.0.6 has no compile-time uniqueness guarantee;
+collisions (`1` and `'1'`). Effect 4.1.0 has no compile-time uniqueness guarantee;
 the temporary 4.0.5 restriction was removed.
 
 ## Guards, Optionality, and Defaults

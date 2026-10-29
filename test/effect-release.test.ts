@@ -6,8 +6,8 @@ import { describe, expect, it } from 'bun:test';
 import { docsDirectory } from '../packages/guidance/index.ts';
 import { skillsDirectory } from '../packages/skills/index.ts';
 
-const baseline = '4.0.6';
-const releases = ['4.0.6', '4.0.5', '4.0.4', '4.0.3', '4.0.2', '4.0.1'];
+const baseline = '4.1.0';
+const releases = ['4.1.0', '4.0.7'];
 const normalize = (text: string) =>
 	text
 		.split('\n')
@@ -17,75 +17,75 @@ const normalize = (text: string) =>
 
 // SHA-256 of the complete included release sections from each tagged changelog,
 // normalized only for trailing whitespace and section-separating blank lines.
-// Generated independently from git show at effect@4.0.6, commit
-// 3b28bf686bf26e9700edd39c025aff2744dc5303; tests require no network/source checkout.
+// Generated independently from git show at effect@4.1.0, commit
+// 9a91b1926a5fbfaffd302a7a41a94d4d53a1154e; tests require no network/source checkout.
 const upstreamDigests: Readonly<Record<string, string>> = {
 	'packages/ai/anthropic/CHANGELOG.md':
-		'16f4beb35252ce0de2f2e7c03c6a7e6e49a81d7538ab87f640409b70a146928a',
+		'5b88948e2d81de96bc5d049b7185f73d0e91d447a2b9705b7ce2741b5af34a28',
 	'packages/ai/cloudflare/CHANGELOG.md':
-		'5a6c48d60504c671786dc6f9a57827156408232cac130c751d60cd7000061462',
+		'0ab9a6c77763bf02be4aec45a09d40fb702d0d6205d2105ebb8f57200d7ae457',
 	'packages/ai/openai-compat/CHANGELOG.md':
-		'1acfa33347be82b8e23d2ecf0d13de68f51a4ad1b28ae49a6b5c80363a90b547',
+		'b4610bd77cf79c83c2953ed8692835656c79e2e4ea20ea74dde2ad3c23b36a29',
 	'packages/ai/openai/CHANGELOG.md':
-		'901d3b1b2f7b53db619f6b2761774edf4cd69bf407a5ab9237366144009d80ea',
+		'6a098b5f002c100cc3507f4fe2c9442b480480dac075531c721c632ba2099d55',
 	'packages/ai/openrouter/CHANGELOG.md':
-		'a72bab5574cdac2ed951863d2a33fa3e934ed09944ae1645cbd3652b75d0d3e5',
+		'b4610bd77cf79c83c2953ed8692835656c79e2e4ea20ea74dde2ad3c23b36a29',
 	'packages/ai/typesafe/CHANGELOG.md':
-		'787a20226008f9d602f5719712f0b0abe165cd79f5925d60d6f99c8b638204a2',
+		'82208e4c2c787e83d68ac522cb6e59af1bcb343b0c2532fbfe9281ae507a0fbe',
 	'packages/atom/react/CHANGELOG.md':
-		'bdacccd09295da392b0dfd3d3ec79a555ae03d28a267a6d5b4e4047b7de52ee6',
+		'1270f1620d1137bad2cbfae6c1e68fb009c5f99e6a73e67ec313dff3a673f50e',
 	'packages/atom/solid/CHANGELOG.md':
-		'b1d9edc3ce6bbc15c4104f09c4417014caccb09272647498b4a3bd4501f3ec29',
+		'05dc3f81f6f10432ea867c4e0ea6279ed960df5539f4693e5bbcd95321358d7d',
 	'packages/atom/vue/CHANGELOG.md':
-		'1e736c9468233b4b8c242482282c04fc279f3759aeb70f6d64de9bc89d6c71de',
+		'05dc3f81f6f10432ea867c4e0ea6279ed960df5539f4693e5bbcd95321358d7d',
 	'packages/effect/CHANGELOG.md':
-		'5bacc37e6262bf9dd15b2db0909f81218473f095d3bf2a8a096d980c46a02f48',
+		'63014f979166c20cdb370b93804c6e5c17994f41dee138c40cc62e7f04a9917c',
 	'packages/opentelemetry/CHANGELOG.md':
-		'e7d9eaad1c1795c49b764a0fe20cb1dfa09614b83e857c06cd0cbd2aca099bce',
+		'971cdb7cd0fd2c94d4de4b7b0037f0501ee0b2ee631e86889875ca660498b178',
 	'packages/platform/browser/CHANGELOG.md':
-		'b3e427b54e41ae790beaf45dedadd8dc5dcb1fbf2057869852854f51d8a59714',
+		'3f030a07d52e42222a2f391390440e959c82e055f209985131fde9fa8e4306c6',
 	'packages/platform/bun/CHANGELOG.md':
-		'2f26a4ddb221abfdba679e9751fc5c6641afd5b789c4df8d8dad74425051554e',
+		'306b25edb7e92ab70551dd861b79ef8db8ebaf8f76e2695d11f6a74baffe0763',
 	'packages/platform/deno/CHANGELOG.md':
-		'55138791f4da6b82f8701760bf358dee1d2bfdfb5a8fc464ad0dd4aa2f7c1fe6',
+		'bc54b797c573ce01b9dff5812775ed9bb49fd9c3d5b227199e1488b2b816caf7',
 	'packages/platform/node-shared/CHANGELOG.md':
-		'7dce7208d3a49bf7e1ec54c2cbdb79791fe73d0b6e0630a1a5f0e5f972f50d18',
+		'4ffb9ce745ce903c83e335e6c92a0a68acf96f8c5af52b372c3a3aa643cdd50a',
 	'packages/platform/node/CHANGELOG.md':
-		'fe06a338ce2fde49c57268f2cc1dc8cf0ff793b0c76b9d17ce51d46866f713d4',
+		'6ee7e80e2fb00ebbe50b27a63f6d4d793443738938fe26babc7cb1dc1d2692ce',
 	'packages/sql/clickhouse/CHANGELOG.md':
-		'db2003fa785dadcad57bd551caebb0e3ab1597911e9f16281bba31bd203218ab',
+		'a2dc9acc5ced64d5f9d93baf7217f1af39563a16d01724c729ed5f4e26b85424',
 	'packages/sql/d1/CHANGELOG.md':
-		'082cc8cd52648dcbe6cad279409ed8d2ffded4c4f31b9daa929735d0afc6dd3a',
+		'05dc3f81f6f10432ea867c4e0ea6279ed960df5539f4693e5bbcd95321358d7d',
 	'packages/sql/libsql/CHANGELOG.md':
-		'bee2f6276c1dbac53028ca637051c7a81ba0f4b895d994ef2ebfa21f0878ca5e',
+		'05dc3f81f6f10432ea867c4e0ea6279ed960df5539f4693e5bbcd95321358d7d',
 	'packages/sql/mssql/CHANGELOG.md':
-		'95990c351b9c683d2e5973f62d77d9345899554270055b3169da79836d45752f',
+		'1f6d9f72cf61a2f941ef75596d6a1c3fc40451f1e9bffe76f5c91d993cca56e2',
 	'packages/sql/mysql2/CHANGELOG.md':
-		'5eae705f4fb773174267414b11219f17ac7db12dbfa9c3e34dc1e3108edb06d3',
+		'05dc3f81f6f10432ea867c4e0ea6279ed960df5539f4693e5bbcd95321358d7d',
 	'packages/sql/pg/CHANGELOG.md':
-		'fc585c8c7edfddb0b7664fe81f6e1e65b4ce9e798e4ba545637648315dc4737a',
+		'ce30306a1679b4638962b0f215ea8b6060c192103dad708be163f056308001c5',
 	'packages/sql/pglite/CHANGELOG.md':
-		'5e2c5008c1c0b5778a31eb4b863ea76d83a93f21d2e26e1db0e398750020c66b',
+		'05dc3f81f6f10432ea867c4e0ea6279ed960df5539f4693e5bbcd95321358d7d',
 	'packages/sql/sqlite-bun/CHANGELOG.md':
-		'e11e8bf930034fcfce1bb3ef427b9d2fdef237c7199f8b6f226c006628e039c2',
+		'05dc3f81f6f10432ea867c4e0ea6279ed960df5539f4693e5bbcd95321358d7d',
 	'packages/sql/sqlite-do/CHANGELOG.md':
-		'23a8fddc9ac3168abe5fc318c125b4596c7c3ce826abbfea7822d6eb424b960a',
+		'28436100c51ca884db61d92840106e6ffaefbf29e5d65451bebe4a1bff0efe1f',
 	'packages/sql/sqlite-node/CHANGELOG.md':
-		'f805ba5198e564e0636e7362857899413ad871931403321d1f3e63a4ec025422',
+		'05dc3f81f6f10432ea867c4e0ea6279ed960df5539f4693e5bbcd95321358d7d',
 	'packages/sql/sqlite-react-native/CHANGELOG.md':
-		'6654f595aa44d87c782f708e392980b20f819c23c6586945735f67ed52573608',
+		'70c16112fd32fc7282d2525ee542c3898c3ecb6a81ab1b7d629838f270ba92e6',
 	'packages/sql/sqlite-wasm/CHANGELOG.md':
-		'80fe90890215870a164e298b25c2aee50b4799bd2b73df4f72304f561545cd55',
+		'05dc3f81f6f10432ea867c4e0ea6279ed960df5539f4693e5bbcd95321358d7d',
 	'packages/tools/docgen/CHANGELOG.md':
-		'35641a8e3a4b23cfef68b41796cd13ce36ea055619dc36311ab428c65340bb77',
+		'277c09841cf81fc5d670e89a4d471dabdd719d3791ca64e2dd39b3b3dfaa90c8',
 	'packages/tools/doctest/CHANGELOG.md':
-		'ac2274fb91f0eac6db1cb0139c0d97b86059654787fb8b7a790797e6816b0503',
+		'05dc3f81f6f10432ea867c4e0ea6279ed960df5539f4693e5bbcd95321358d7d',
 	'packages/tools/graphql-generator/CHANGELOG.md':
-		'045db139b484377ea4b912701d5c4074ea525ae04ecf058b39bc57343aba8a04',
+		'c80344a77ea4a0711882a472f2eabc8ee0489e99a19b1c43cfeda51bacd0b50e',
 	'packages/tools/openapi-generator/CHANGELOG.md':
-		'c17a132f3a86c73b92f51930a9e2b014c2fef6dda31a998ed20f8c1429efd318',
+		'7a113d6bd500505c86db8c6cdde5e9312a837a02e7110b305bcd31876985fc48',
 	'packages/vitest/CHANGELOG.md':
-		'371a61a725ed581034cfa56f3eab32b31bbd4a8eaea27d2a8c2ecbc84aa13f04'
+		'8ba9049e2895d21b82429dfc2927b009d99869f59d2b2fac7879fb5431be0a00'
 };
 
 describe('Effect release alignment', () => {
@@ -145,7 +145,7 @@ describe('Effect release alignment', () => {
 		}
 	});
 
-	it('retains all 195 upstream sections without rewriting their contents', async () => {
+	it('retains all 66 upstream sections without rewriting their contents', async () => {
 		const text = await readFile(
 			path.join(docsDirectory, `effect-${baseline}-changelog.md`),
 			'utf8'
@@ -165,14 +165,10 @@ describe('Effect release alignment', () => {
 			const body = match[2] ?? '';
 			const sections = [
 				...body.matchAll(
-					/^## (4\.0\.\d+)\n([\s\S]*?)(?=^## |$(?![\s\S]))/gm
+					/^## (4\.\d+\.\d+)\n([\s\S]*?)(?=^## |$(?![\s\S]))/gm
 				)
 			];
-			expect(sections.map((section) => section[1])).toEqual(
-				path.includes('graphql-generator')
-					? releases.slice(0, 3)
-					: releases
-			);
+			expect(sections.map((section) => section[1])).toEqual(releases);
 			const content = normalize(
 				sections.map((section) => normalize(section[0])).join('\n\n')
 			);
@@ -193,16 +189,16 @@ describe('Effect release alignment', () => {
 				);
 			}
 		}
-		expect(sectionCount).toBe(195);
+		expect(sectionCount).toBe(66);
 		const official = [
 			...text.matchAll(
-				/^# Official GitHub release: effect@(4\.0\.\d+)\n([\s\S]*?)(?=^# |$(?![\s\S]))/gm
+				/^# Official GitHub release: effect@(4\.\d+\.\d+)\n([\s\S]*?)(?=^# |$(?![\s\S]))/gm
 			)
 		];
 		expect(official.map((match) => match[1])).toEqual(releases);
 		official.forEach((match) => {
 			const body = match[2] ?? '';
-			const notes = body.slice(body.indexOf('### Patch Changes'));
+			const notes = body.slice(body.indexOf('### '));
 			expect<unknown>(normalize(notes)).toBe(
 				coreSections.get(match[1] ?? '')
 			);

@@ -1,11 +1,11 @@
 ---
 name: effect-ai-decision-model
-description: Use Effect's Decision and DecisionModel APIs for System One models such as Jev. Covers typed classify/rate/probability definitions, settled outcomes, images, TypeSafe/OpenRouter/OpenAI/Cloudflare providers, errors, and test implementations.
+description: Use Effect's Decision and DecisionModel APIs for System One models such as Jev. Covers typed classify/rate/probability/locate definitions, settled outcomes, images, TypeSafe/OpenRouter/OpenAI/Cloudflare providers, errors, and test implementations.
 ---
 
 # Effect AI Decision Model
 
-Baseline: `effect@4.0.6` and matching `@effect/*` packages. These AI APIs carry
+Baseline: `effect@4.1.0` and matching `@effect/*` packages. These AI APIs carry
 `@stability unstable`; inspect the consuming version's source before using newer
 contracts. References below are pinned to the stable tag.
 
@@ -89,8 +89,8 @@ each entry's `label` and `description`, not treat it as a string.
   their boundary before construction. These throws are outside `decide`'s error
   channel. Treat definitions and their nested inputs as immutable.
 
-Exported types: `Classify<Label>`, `Rate<Level>`, `Probability`, their union `Any`,
-`ClassifyAnswer<Label>`, `RateAnswer<Level>`, `ProbabilityAnswer`, conditional
+Exported types: `Classify<Label>`, `Rate<Level>`, `Probability`, `Locate<Path>`, their union `Any`,
+`ClassifyAnswer<Label>`, `RateAnswer<Level>`, `ProbabilityAnswer`, `LocateAnswer`, conditional
 `Answer<D>`, mapped `Answers<Decisions>`, and `Definition<Input, Decisions>`.
 `Definition` holds `input`, `decisions`, and the `Decision.TypeId` brand.
 
@@ -100,10 +100,11 @@ Exported types: `Classify<Label>`, `Rate<Level>`, `Probability`, their union `An
   `Input["EncodingServices"]`. Alternatively, `yield* DecisionModel.DecisionModel`
   once and call `model.decide(definition, { input })`; only encoding services then
   remain in that call's requirements.
-- `DecideOptions<Input>` contains `input: Input["Type"]` and optional `images`.
-  Each image has `{ mediaType: string, data: string | Uint8Array | URL }`.
-  Provider support varies; an empty list is omitted. Pass the decoded
-  value, not its encoded representation. Unknown input still needs boundary
+- `DecideOptions<Input>` contains only `input: Input["Type"]`. Declare images
+  inside the input schema with `Decision.Image`, whose decoded value is
+  `{ mediaType: string, data: string | Uint8Array | URL }`. Refer to image paths
+  in instructions. The removed top-level `images` option is not supported.
+  Pass the decoded input, not its encoded representation. Unknown input still needs boundary
   decoding; its `SchemaError` is separate from `decide`'s `AiError`.
 - Encoding uses `Schema.encodeEffect(Schema.toCodecJson(definition.input))`.
   Providers receive JSON **values**, not a pre-stringified document. Existing
@@ -123,6 +124,31 @@ Exported types: `Classify<Label>`, `Rate<Level>`, `Probability`, their union `An
   scoped provider services. Multiple inputs require separate calls; use bounded
   `Effect.forEach` concurrency. Built-in spans are `DecisionModel.decide` and
   `DecisionModel.decideSettled`.
+
+### Images and target locations
+
+`Decision.locate({ image: 'photo', instructions })` returns
+`{ box: { left, top, right, bottom }, confidence? }`, with normalized coordinates
+in `[0, 1]`. `Decision.make` checks that the image path names a required image
+field. Locate has no not-found result; pair it with a probability question when
+target presence is uncertain. Providers must support both images and locate.
+
+<!-- typecheck -->
+```ts
+import { Decision, DecisionModel } from 'effect/ai';
+import { Schema } from 'effect';
+
+const Target = Decision.make({
+  input: Schema.Struct({ photo: Decision.Image }),
+  decisions: {
+    present: Decision.probability({ instructions: 'Is a submit button visible in photo?' }),
+    button: Decision.locate({ image: 'photo', instructions: 'Locate the submit button' })
+  }
+});
+const locate = (data: Uint8Array) => DecisionModel.decide(Target, {
+  input: { photo: { mediaType: 'image/png', data } }
+});
+```
 
 ### Strict versus settled outcomes
 
@@ -219,7 +245,7 @@ const program = DecisionModel.decide(Urgency, {
 | `TypeSafeDecisionModel.make({ model })` | `Effect<DecisionModel, never, TypeSafeClient>`; captures the client |
 | `TypeSafeDecisionModel.layer({ model })` | `Layer<DecisionModel, never, TypeSafeClient>` |
 | `TypeSafeDecisionModel.model(modelId)` | `Model.Model<"typesafe", DecisionModel, TypeSafeClient>`; usable as a layer, adding `Model.ProviderName` and `Model.ModelName` metadata |
-| Model IDs | Known union: `jev-latest`, `jev-preview`, `jev-1.13.0`; arbitrary strings also accepted. Use client model discovery for current availability |
+| Model IDs | Known union: `jev-latest`, `jev-preview`, `jev-1.14.0`, `jev-1.13.0`; arbitrary strings also accepted. Use client model discovery for current availability |
 | `TypeSafeClient.make(options)` / `layer(options)` | Require `HttpClient.HttpClient`; construction error is `never` |
 | `TypeSafeClient.layerConfig(options?)` | Same HTTP requirement, construction error `Config.ConfigError`; defaults to `Config.Redacted('TYPESAFE_API_KEY')` |
 
@@ -236,6 +262,11 @@ scoped transforms replace rather than compose; compose explicitly when both are
 needed. The module also exports the `TypeSafeConfig` service and its
 `getOrUndefined` effect. There is no per-call TypeSafe model override; provide a
 different decision-model layer.
+
+TypeSafe supports image input and locate questions. Locate requires `jev-preview`
+or `jev-1.14.0`. PNG/JPEG images must be 256–1568 pixels per side; remote URLs are
+rejected and EXIF orientation is ignored. Assets are keyed by image reference;
+locate maps to a Box question. Wire codecs include Box questions/answers and assets.
 
 ### Wire mapping and adapter limits
 
@@ -295,6 +326,12 @@ removed `OpenAiContentPolicyMetadata` / `metadata.openai.refusedDecisions`.
 `CLOUDFLARE_AI_GATEWAY_ID`). It sets the `cf-aig-gateway-id` request header;
 keep account and API-token configuration in the client layer.
 
+`AiError.NetworkError` records `method` and `url` instead of `request` and may
+carry an unredacted `HttpClientError` in `cause`; inspect it deliberately when
+logging. Providers use `NetworkError.fromHttpClientError`; `fromRequestError`
+remains available. `AiError.HttpRequestDetails`, `Response.HttpRequestDetails`,
+and request fields in HTTP context/response metadata were removed.
+
 ## Failures
 
 `decide` fails with outer `AiError.AiError` (`_tag: 'AiError'`) containing a tagged
@@ -313,8 +350,7 @@ then seconds or HTTP-date) and TypeSafe request/error metadata.
 
 `InvalidResponseError` is nonretryable and means the provider envelope/SSE failed
 its schema contract, optionally retaining HTTP context. `InvalidOutputError`
-means decoded model output failed validation and remains retryable. The former
-exists in 4.0.6 despite an upstream `@since 4.1.0` annotation.
+means decoded model output failed validation and remains retryable.
 
 The Effect TypeSafe client has **no automatic retries**. Add a bounded retry
 policy at the owned request boundary when appropriate, honoring retry metadata;
@@ -323,7 +359,7 @@ policy construction and `effect-error-handling` for reason-based recovery.
 
 ## Test implementations and custom providers
 
-`DecisionModel.make({ decide, probabilityPrecision?, supportsImages? })` returns
+`DecisionModel.make({ decide, probabilityPrecision?, supportsImages?, supportsLocate? })` returns
 `Effect<DecisionModel>`; provide it with `Layer.effect`. Its provider callback is
 `(ProviderOptions) => Effect<ProviderResponse, AiError>` with no remaining service
 requirements: acquire dependencies while constructing the layer and close over
@@ -332,9 +368,13 @@ them. `ProviderOptions` contains encoded `state: Schema.Json` and all `decisions
 `inputTokens` / `outputTokens`, each `number | undefined`. Optional `id`, `modelId`,
 and `metadata` pass through; absent metadata becomes `{}`. Set `supportsImages:
 true` only if the callback supports nonempty image input; otherwise core rejects
-it before invoking the provider. `ProviderOptions.images` is omitted when empty.
+it before invoking the provider. `ProviderOptions.images` is omitted when empty;
+otherwise each item is `{ reference, path, image }`, with a `(string | number)[]`
+path and base64-string or `URL` image data. Encoded state substitutes references
+for image values. Enable `supportsLocate: true` only when the callback handles
+locate decisions.
 
-Provider answers use `_tag: 'Classify' | 'Rate' | 'Probability'` and the public
+Provider answers use `_tag: 'Classify' | 'Rate' | 'Probability' | 'Locate'` and the public
 answer fields above, except a provider Rate answer has **no label**. The core
 derives it. `ProviderAnswer` additionally includes `ProviderRefusalAnswer`
 (`{ _tag: 'Refusal' }`). Provider classify/rate `probabilities` is optional: omit
@@ -389,7 +429,7 @@ normalized. Precision describes provider rounding, not output rounding.
 
 ## Pinned source
 
-Resolve these paths under the Effect reference at tag `effect@4.0.6`:
+Resolve these paths under the Effect reference at tag `effect@4.1.0`:
 
 - `packages/effect/src/ai/{Decision,DecisionModel}.ts` — complete core surface.
 - `packages/effect/test/ai/DecisionModel.test.ts` and `typetest/ai/DecisionModel.tst.ts`
@@ -399,4 +439,4 @@ Resolve these paths under the Effect reference at tag `effect@4.0.6`:
 - `packages/ai/typesafe/test/` and `typetest/` — adapter contract tests.
 - `packages/ai/{openai,cloudflare}/src/*DecisionModel.ts` — image and wire mappings.
 - `packages/effect/CHANGELOG.md` — #9124 structured descriptions, #9422 metadata,
-  #9437 settled outcomes; inspect the 4.0.1–4.0.6 entries and matching provider changelogs.
+  #9437 settled outcomes; inspect the 4.0.7 and 4.1.0 entries and matching provider changelogs.

@@ -18,7 +18,7 @@ for HTTP value schemas. Import Undici-specific APIs from
 `@effect/platform-node/Undici`; the transport layer owns their initialization.
 HTTP `QUERY` is supported; configure CORS `allowedMethods` explicitly if needed.
 
-The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read the `effect@4.0.6` tag for this skill; main may be newer. APIs tagged `@stability unstable`, including these HTTP modules and Undici integration, may break in minor releases. Keep Effect-family packages on the same release.
+The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read the `effect@4.1.0` tag for this skill; main may be newer. APIs tagged `@stability unstable`, including these HTTP modules and Undici integration, may break in minor releases. Keep Effect-family packages on the same release.
 
 Key files:
 
@@ -215,7 +215,9 @@ HttpClientRequest.trace('/debug');
 HttpClientRequest.get('/search', { urlParams: { q: 'effect' }, acceptJson: true });
 ```
 
-These come from the generic factory `HttpClientRequest.make(method)`; `HttpClientRequest.setMethod` swaps the method on an existing request. `HttpMethod` is a closed union of nine verbs, including body-carrying `QUERY` (`HttpClientRequest.query`, `client.query`, `HttpClient.query`) — there is no path for custom methods like `REPORT`.
+These come from the generic factory `HttpClientRequest.make(method)`; `HttpClientRequest.setMethod` swaps the method on an existing request. `HttpMethod` is a closed union of nine verbs, including body-carrying `QUERY` (`HttpClientRequest.query`, `client.query`, `HttpClient.query`) for named constructors. `makeWith` and received/forwarded requests preserve arbitrary
+method strings such as `REPORT`; use `HttpMethod.isHttpMethod` before an
+exhaustive match on known verbs.
 
 ### URL combinators
 
@@ -596,6 +598,11 @@ idempotentClient.pipe(
 idempotentClient.pipe(HttpClient.retry({ times: 3 }));
 ```
 
+`HttpClient.isTransientError` and `isTransientResponse` export the predicates
+used by `retryTransient`. Experimental `HttpClient.withCircuitBreaker` integrates
+with `effect/persistence/CircuitBreaker`; review keyed policies and storage when
+choosing a shared breaker boundary.
+
 ### `HttpClient.retryTransient`
 
 Purpose-built for HTTP. Transient = response status in {408, 429, 500, 502, 503, 504}, `TransportError`, a `StatusCodeError` wrapping a transient status, or a `TimeoutError` (so `Effect.timeout` composes with it).
@@ -707,21 +714,30 @@ Error channel gains `RateLimiter.RateLimiterError`.
 
 ```ts
 const withSession = Effect.gen(function* () {
-	const jar = yield* Ref.make(Cookies.empty);
+	const jar = yield* Ref.make<ReadonlyArray<Cookies.Cookie>>([]);
 	const client = (yield* HttpClient.HttpClient).pipe(HttpClient.withCookiesRef(jar));
 
 	yield* client.post('https://example.com/login', {
 		body: HttpBody.urlParams(UrlParams.fromInput({ user: 'u', pass: 'p' }))
 	});
 	// set-cookie values from every response are merged into the jar and sent
-	// as a `cookie` header on subsequent requests
+	// as a `cookie` header only for matching host, path, scheme, and expiry
 	const profile = yield* client.get('https://example.com/me');
 
-	const session = Cookies.getValue(yield* Ref.get(jar), 'session'); // Option<string>
+	const session = (yield* Ref.get(jar)).find((cookie) => cookie.name === 'session')?.value;
 });
 ```
 
 Individual responses also expose `response.cookies` (parsed `set-cookie`); useful helpers: `Cookies.toCookieHeader`, `Cookies.fromSetCookie`, `Cookies.merge`, `Cookies.toRecord`.
+
+The jar stores an array of cookies with origin metadata. Seed it using
+`Cookies.mergeIntoArray` or explicit-domain cookies; response `cookies` remains
+a `Cookies` collection. `Cookies.toRequestCookieHeader` selects cookies for a URL.
+
+`FetchHttpClient` fails unsupported streaming request bodies with `EncodeError`
+instead of sending `[object ReadableStream]`. Opt in to buffering by providing
+`FetchHttpClient.StreamBodyFallback` as `"buffer"`; this holds the whole body in
+memory. The default is `"error"`.
 
 ### Redirects
 

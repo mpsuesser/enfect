@@ -2,9 +2,9 @@
 
 This document defines the working model behind Effect-first code using the Effect v4 ecosystem.
 
-Bundled baseline: **Effect 4.0.6 (stable)**. Check the consuming project's installed
+Bundled baseline: **Effect 4.1.0 (stable)**. Check the consuming project's installed
 version and inspect the matching upstream release tag before using newer APIs.
-The release changelog and migration audit are in `docs/effect-4.0.6.md`.
+The release changelog and migration audit are in `docs/effect-4.1.0.md`.
 Source paths below are relative to the Effect source reference; locate symbols
 by name rather than relying on line numbers or a particular tool name.
 
@@ -290,7 +290,7 @@ export type Tenant = typeof Tenant.Type;
 - Prefer `Schema.Class` for tagged union member schemas.
 - Use `Schema.TaggedUnion` only for canonical `_tag` object-union construction.
 - Reference: `packages/effect/SCHEMA.md`, sections `TaggedUnion` and `toTaggedUnion`.
-- Both union forms offer `matchOrElse` for partial matching with a typed fallback. Prefer `match` when every variant must be handled separately. `toTaggedUnion` narrows fallback input to unmatched variants; direct `Schema.TaggedUnion` types it as the full union.
+- Both union forms offer `matchOrElse` for partial matching with a typed fallback. Prefer `match` when every variant must be handled separately. Both forms narrow fallback input to unmatched variants. Annotate handler return types instead of passing explicit output type arguments to `match` or `matchOrElse`.
 
 Example:
 

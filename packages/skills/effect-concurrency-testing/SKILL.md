@@ -7,10 +7,10 @@ description: Test Effect concurrency primitives including PubSub, Deferred, Latc
 
 This skill provides patterns for testing Effect's concurrency primitives: fibers, latches, deferreds, PubSub, SubscriptionRef, and streams.
 
-Baseline: **effect@4.0.6 stable**, with matching `@effect/vitest` (an unstable
+Baseline: **effect@4.1.0 stable**, with matching `@effect/vitest` (an unstable
 integration). Read exact `packages/vitest/src/index.ts`, `internal/internal.ts`,
 under `packages/vitest/src/`, and `packages/effect/src/testing/TestClock.ts` via
-`git show effect@4.0.6:<path>`. Its Vitest peer range is `>=5.0.0 <6.0.0`.
+`git show effect@4.1.0:<path>`. Its Vitest peer range is `>=5.0.0 <6.0.0`.
 Main may describe later behavior.
 
 The `@effect/vitest` examples below are source-reviewed against that tag, but

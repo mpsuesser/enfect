@@ -13,7 +13,7 @@ optimize(querying) ∧ ¬optimize(writing)
 </philosophy>
 
 <current-practice>
-baseline      := effect@4.0.6 (exact release tag)
+baseline      := effect@4.1.0 (exact release tag)
 implementation := OTel spans + annotations
 wide-events    := mental-model for annotation strategy
 
@@ -99,7 +99,7 @@ choosing(fields-to-index)
 
 Reference: See `Article.md` for full article by Boris Tane (loggingsucks.com)
 
-Effect 4.0.6 mapping: HTTP/RPC span names default to the method, so query span
+Effect 4.1.0 mapping: HTTP/RPC span names default to the method, so query span
 kind/semantic attributes rather than old `http.client` / `http.server` prefixes.
 OTLP log fields use `effect.fiberId`, numeric `effect.log_span.*`, and
 `exception.*`. HTTP header capture is opt-in; header redaction and query-parameter

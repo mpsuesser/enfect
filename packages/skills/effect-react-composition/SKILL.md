@@ -7,14 +7,14 @@ description: Build composable React components using Effect Atom for state manag
 
 Build React UIs using compositional patterns, Effect Atom for state management, and the component module pattern. Use this skill when creating React applications that integrate with Effect's ecosystem.
 
-`@effect/atom-react@4.0.6` requires React `>=19.0.0 <20.0.0` and the same version
+`@effect/atom-react@4.1.0` requires React `>=19.0.0 <20.0.0` and the same version
 of `effect`. Core `effect/reactivity` APIs remain `@stability unstable` and can
 change incompatibly in minor releases.
 
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Use `git show effect@4.0.6:<path>` there for this baseline; main may be ahead.
+Use `git show effect@4.1.0:<path>` there for this baseline; main may be ahead.
 
 Reference this for:
 
@@ -305,7 +305,7 @@ and keep external-resource cleanup in atom finalizers. See `effect-atom-state`
 for SWR, concurrent function atoms, and batching semantics.
 
 `RegistryProvider.initialValues` accepts tuples from
-`Atom.initialValue(atom, value, { skipInitialRun: true })` in 4.0.6. Hydrated
+`Atom.initialValue(atom, value, { skipInitialRun: true })` in 4.1.0. Hydrated
 effect/stream atoms otherwise run on mount to establish dependencies. Skipping
 does not skip factory reads or wrapper/reactivity setup; effect-internal
 dependencies are tracked only on the first real run. An `Initial` seed never

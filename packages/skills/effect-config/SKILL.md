@@ -7,9 +7,9 @@ You are an Effect TypeScript expert specializing in typed configuration loading,
 
 ## Effect Source Reference
 
-Baseline: **Effect 4.0.6**. The source checkout is at
+Baseline: **Effect 4.1.0**. The source checkout is at
 `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Read exact-tag files with `git show effect@4.0.6:<path>`; main may be newer.
+Read exact-tag files with `git show effect@4.1.0:<path>`; main may be newer.
 
 Reference these files for Config/ConfigProvider details:
 
@@ -231,7 +231,10 @@ structural children. Opaque encodings such as `Schema.Any`, `Schema.Unknown`, an
 
 `Config.Record` splits a string pair only at its first key/value separator,
 preserving the remainder (`authorization=abc==` keeps `abc==`). Empty keys or
-values are skipped. An empty key/value separator uses the first two characters;
+values are skipped by default. `trim: true` trims keys and values, and
+`keepEmptyValues: true` retains empty values as `""`; both default to `false`.
+The same options apply to `SchemaGetter.splitKeyValue` and
+`SchemaTransformation.splitKeyValue`. An empty key/value separator uses the first two characters;
 prefer a nonempty separator for configuration contracts.
 
 <!-- typecheck -->

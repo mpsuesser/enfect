@@ -3,7 +3,6 @@
  *
  * Bans `child_process` / `node:child_process` imports. Effect exposes
  * `ChildProcessSpawner` + `ChildProcess` in `effect/process`
- * (and the older `Command` / `CommandExecutor` in `@effect/platform`)
  * which give typed errors, scoped lifetime, and declarative I/O.
  */
 import type { CreateRule } from '@oxlint/plugins';
@@ -18,7 +17,7 @@ const ChildProcessImportSource = Schema.Literals([
 ]).annotate({
 	title: 'ChildProcessImportSource',
 	description:
-		'Node `child_process` module import specifiers. Use `ChildProcessSpawner` (Effect v4) or `CommandExecutor` (`@effect/platform`) instead.'
+		'Node `child_process` module import specifiers. Use `ChildProcessSpawner` + `ChildProcess` from `effect/process` instead.'
 });
 
 const isChildProcessImportSource = Schema.is(ChildProcessImportSource);

@@ -8,7 +8,7 @@ You are an Effect TypeScript expert specializing in building MCP (Model Context 
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Inspect `git show effect@4.0.6:<path>` in that checkout for this baseline; main
+Inspect `git show effect@4.1.0:<path>` in that checkout for this baseline; main
 may be ahead. Keep Effect-family package versions aligned. The MCP/AI APIs remain
 `@stability unstable` and can change incompatibly in minor releases.
 
@@ -42,18 +42,23 @@ import { NodeRuntime, NodeStdio } from '@effect/platform-node';
 
 ## Architecture Overview
 
-An MCP server is composed of three kinds of **part layers** merged together, then provided with a **transport layer**:
+Merge resource, prompt, and toolkit registration layers, then pass them to the
+transport's `registrations` option:
 
+```typescript
+const registrations = Layer.mergeAll(...resources, ...prompts, toolkitLayer);
+const Server = McpServer.layerStdio({
+  name: 'My Server',
+  version: '1.0.0',
+  protocols: [McpProtocol.v2025_11_25],
+  registrations
+}).pipe(Layer.provide(loggingLayer));
 ```
-Layer.mergeAll(
-  ...resources,    // McpServer.resource(...)
-  ...prompts,      // McpServer.prompt(...)
-  toolkitLayer     // McpServer.toolkit(...) with implementations
-).pipe(
-  Layer.provide(transportLayer),   // McpServer.layerStdio(...) or McpServer.layerHttp(...)
-  Layer.provide(loggingLayer)      // Logger — stderr for stdio transport
-)
-```
+
+Handler service reads are request dependencies. Supply them through MCP middleware
+(or HTTP router middleware for HTTP transports). To use a construction-time
+service, capture it with `Layer.unwrap` and close over it in handlers; ordinary
+`Layer.provide` cannot discharge `McpRequest<"Requires", S>` markers.
 
 Every server runner requires a non-empty `protocols` option. Put the preferred fallback revision first; an exact initialization offer is selected when present, otherwise the first adapter is used where the transport permits fallback. `initialize` negotiates from its body even when the client sends an unsupported default protocol header. Subsequent requests validate `MCP-Protocol-Version`; unsupported explicit versions return `400`. Let initialization reach body negotiation.
 
@@ -421,16 +426,14 @@ For CLI-based MCP servers (most common — used by Claude Desktop, etc.):
 
 ```typescript
 // The Stdio requirement is satisfied by NodeStdio.layer
-Layer.mergeAll(/* parts */).pipe(
-	Layer.provide(
-		McpServer.layerStdio({
-			name: 'My Server',
-			version: '1.0.0',
-			protocols: [McpProtocol.v2025_11_25]
-		})
-	),
-	Layer.provide(NodeStdio.layer),
-	Layer.provide(Layer.succeed(Logger.LogToStderr)(true))
+McpServer.layerStdio({
+  name: 'My Server',
+  version: '1.0.0',
+  protocols: [McpProtocol.v2025_11_25],
+  registrations: Layer.mergeAll(/* resource, prompt, and toolkit layers */)
+}).pipe(
+  Layer.provide(NodeStdio.layer),
+  Layer.provide(Layer.succeed(Logger.LogToStderr)(true))
 );
 ```
 
@@ -497,49 +500,36 @@ const Tools = Toolkit.make(Tool.make('Greet', {
   parameters: Schema.Struct({ name: Schema.String }),
   success: Schema.String
 }));
-const Endpoint = McpServer.toolkit(Tools).pipe(
-  Layer.provideMerge(Tools.toLayer({ Greet: ({ name }) => Effect.succeed(`Hello, ${name}`) })),
-  Layer.provide(McpServer.layerHttpRequestScoped({
-    name: 'Greetings',
-    version: '1.0.0',
-    path: '/mcp',
-    protocols: [McpProtocol.v2026_07_28]
-  }))
-);
+const Endpoint = McpServer.layerHttpRequestScoped({
+  name: 'Greetings',
+  version: '1.0.0',
+  path: '/mcp',
+  protocols: [McpProtocol.v2026_07_28],
+  registrations: McpServer.toolkit(Tools).pipe(
+    Layer.provideMerge(Tools.toLayer({ Greet: ({ name }) => Effect.succeed(`Hello, ${name}`) }))
+  )
+});
 // Provide Endpoint to the host's HttpRouter composition; do not launch a daemon per request.
 ```
 
-### Type signatures
+### Transport requirements
 
-```typescript
-// stdio: requires Stdio service
-layerStdio: (options: {
-	name: string;
-	version: string;
-	description?: string;
-	instructions?: string;
-	websiteUrl?: string;
-	icons?: ReadonlyArray<McpSchema.Icon>;
-	protocols: readonly [McpProtocol.ProtocolAdapter, ...Array<McpProtocol.ProtocolAdapter>];
-	extensions?: NonNullable<typeof McpSchema.ServerCapabilities.Type['extensions']>;
-}) => Layer.Layer<McpServer.McpServer | McpSchema.McpServerClient, Cause.IllegalArgumentError, Stdio>;
+All transports accept server metadata, nonempty `protocols`, optional `extensions`,
+`cacheHints`, and a `registrations` layer. Registration construction errors and
+services propagate into the transport layer. Built-in request services are
+supplied by the transport; remaining request dependencies must be provided by
+middleware. HTTP layers expose remaining request requirements through
+`HttpRouter.Request` markers.
 
-// HTTP: requires HttpRouter
-layerHttp: (options: {
-	name: string;
-	version: string;
-	path: HttpRouter.PathInput;
-	description?: string;
-	instructions?: string;
-	websiteUrl?: string;
-	icons?: ReadonlyArray<McpSchema.Icon>;
-	protocols: readonly [McpProtocol.ProtocolAdapter, ...Array<McpProtocol.ProtocolAdapter>];
-	extensions?: NonNullable<typeof McpSchema.ServerCapabilities.Type['extensions']>;
-	allowedOrigins?: ReadonlyArray<string>;
-	allowSessionTermination?: boolean;
-	allowSubscriptions?: boolean;
-}) => Layer.Layer<McpServer.McpServer | McpSchema.McpServerClient, Cause.IllegalArgumentError, HttpRouter.HttpRouter>;
-```
+| Transport | Runtime requirement | Additional options |
+| --- | --- | --- |
+| `layerStdio` | `Stdio` | No HTTP route |
+| `layerHttp` | `HttpRouter.HttpRouter` | `path`, `allowedOrigins`, `allowSessionTermination`, `allowSubscriptions` |
+| `layerHttpRequestScoped` | `HttpRouter.HttpRouter` | `path`, `allowedOrigins`; sessionless protocols only |
+
+`cacheHints: { tools: { ttl: '1 minute', cacheScope: 'private' } }` sets discovery
+freshness for `v2026_07_28`. Without hints, results retain zero TTL and private
+scope. `resources/read` always retains that default.
 
 ## Client Capabilities
 
@@ -549,6 +539,11 @@ Access the connecting client's capabilities from within tool/resource handlers:
 const caps = yield* McpServer.clientCapabilities;
 // caps: ClientCapabilities
 ```
+
+`McpServer.visibility` can hide registrations per request using middleware-provided
+services. Visibility middleware also runs on list requests, once per registration;
+`MiddlewareMethod` includes list methods. Duplicate local/global middleware runs
+once. `McpTest.makeClient` tests registrations in memory over JSON-RPC encoding.
 
 ## Conditional Tool/Resource/Prompt Enabling
 
@@ -590,7 +585,7 @@ const WorkspaceResource = Layer.effectDiscard(
 
 `McpServer` exposes a server that MCP clients connect to over stdio or HTTP. `OpenAiTool.Mcp` is different: it is an OpenAI provider-defined tool that lets an OpenAI model call a remote MCP server. When using OpenAI's hosted MCP integration, use the canonical `OpenAiMcp` custom name from `OpenAiTool.Mcp` and handle provider approval flow through normal tool approval request/response parts.
 
-For your application to connect directly instead, 4.0.6 adds experimental
+For your application to connect directly instead, use experimental
 `effect/ai/McpClient` and `McpClientError`. The client supports `2025-11-25` and
 `2026-07-28` over stdio/HTTP with an explicit revision and scoped lifetime;
 `McpClient.toolkit(client, prefix?)` bridges discovered tools into an Effect AI
@@ -657,7 +652,7 @@ const HelpPrompt = McpServer.prompt({
 });
 
 // --- Server ---
-const ServerLayer = Layer.mergeAll(
+const Registrations = Layer.mergeAll(
 	ReadmeResource,
 	ItemResource,
 	HelpPrompt,
@@ -668,14 +663,13 @@ const ServerLayer = Layer.mergeAll(
 			})
 		)
 	)
-).pipe(
-	Layer.provide(
-		McpServer.layerStdio({
-			name: 'Demo MCP Server',
-			version: '1.0.0',
-			protocols: [McpProtocol.v2025_11_25]
-		})
-	),
+);
+const ServerLayer = McpServer.layerStdio({
+  name: 'Demo MCP Server',
+  version: '1.0.0',
+  protocols: [McpProtocol.v2025_11_25],
+  registrations: Registrations
+}).pipe(
 	Layer.provide(NodeStdio.layer),
 	Layer.provide(Logger.layer([Logger.consolePretty()])),
 	Layer.provide(Layer.succeed(Logger.LogToStderr)(true))
@@ -737,20 +731,20 @@ const ServerLayer = Layer.mergeAll(
 ### Resource content from Effect services
 
 ```typescript
-const ConfigResource = McpServer.resource({
-	uri: 'app://config',
-	name: 'App Config',
-	content: Effect.gen(function* () {
-		const config = yield* ConfigService;
-		return JSON.stringify(yield* config.getAll());
-	})
-});
+const ConfigResource = Layer.unwrap(Effect.gen(function* () {
+  const config = yield* ConfigService;
+  return McpServer.resource({
+    uri: 'app://config',
+    name: 'App Config',
+    content: config.getAll().pipe(Effect.map(JSON.stringify))
+  });
+}));
 ```
 
 ## Key Rules
 
-1. **Always merge part layers with `Layer.mergeAll`** — resources, prompts, and toolkit layers are independent and produce `Layer<never, never, ...>`
-2. **Provide transport last** — `Layer.provide(McpServer.layerStdio(...))` or `Layer.provide(McpServer.layerHttp(...))`
+1. **Merge registrations** — combine resource, prompt, and toolkit layers with `Layer.mergeAll`.
+2. **Pass registrations to the transport** — `McpServer.layerStdio({ ..., registrations })` or the corresponding HTTP layer.
 3. **stderr for stdio** — Never log to stdout when using stdio transport
 4. **Toolkit pattern** — `McpServer.toolkit(tk).pipe(Layer.provideMerge(tk.toLayer({...})))` is the canonical pattern
 5. **Schema for parameters** — `Tool.make` takes a schema with an encoded object

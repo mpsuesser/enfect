@@ -9,7 +9,7 @@ These modules live under `effect/*`. There are no `@effect/rpc` or `@effect/clus
 
 ## Effect Source Reference
 
-The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Inspect the `effect@4.0.6` tag for this skill; main may be newer.
+The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Inspect the `effect@4.1.0` tag for this skill; main may be newer.
 
 Key files:
 
@@ -614,8 +614,9 @@ client.Subscribe({ topic: 't' }, {
 ```
 
 `discard: true` skips response decoding and removes response-side failures;
-transport and required client-middleware failures can still occur. A successful
-send is not proof that the server completed the operation. Cluster persistent
+transport and required client-middleware failures can still occur. Completion waits for the server acknowledgement, which is not proof that the
+handler completed the operation. Upgrade SchemaBinary peers together because
+the discard envelope fingerprint changed. Cluster persistent
 messages additionally have their documented storage/delivery outcomes.
 
 `asQueue: true` is useful when you need finer control than a `Stream` gives you — e.g., you want to take only one chunk, then drop it. The end-of-stream signal is `Cause.Done` in the queue's error channel.
@@ -1339,11 +1340,24 @@ Shard-release duration/releasing gauges and slow-release warnings expose handoff
 progress; active-entity counts are read when metrics are sampled. Sharding spans
 use low-cardinality entity types in span names; entity IDs remain attributes.
 
+### 4.1.0 crypto, startup, and scaling
+
+Provide `Digest.Digest` explicitly to `SqlMessageStorage` and `SingleRunner`;
+runtime service bundles no longer supply crypto. `SqlMessageStorage.makeEncodedStorage`
+constructs a driver without startup SQL; run `layerMigrations` separately first
+with the matching prefix. `makeEncoded` continues to migrate by default.
+
+`ShardingConfig.runnerJoinDebounce` defaults to zero. A nonzero duration coalesces
+runner joins until membership is quiet, bounded by four times that duration;
+existing runners leaving or becoming unhealthy are published immediately.
+PostgreSQL 14+ and MySQL shard-lock connections expire frozen ownership, and
+replaced lock sessions report old locks as lost. These fixes do not make external
+side effects exactly once.
+
 ### Separate storage migrations from runtime
 
 Both SQL storage modules expose `migrations({ prefix? })` loaders,
-`layerMigrations({ prefix? })`, and `layerStorage({ prefix? })` at `effect@4.0.6`
-(despite stale `@since 4.1.0` comments in the tagged source). Pass an options bag
+`layerMigrations({ prefix? })`, and `layerStorage({ prefix? })` at `effect@4.1.0`; pass an options bag
 even for defaults. Existing `layer` / `layerWith` still run migrations first;
 use split layers to deploy DDL with an owner account and run with DML-only grants.
 Prefixes must agree, and deployment must finish before runtime starts.

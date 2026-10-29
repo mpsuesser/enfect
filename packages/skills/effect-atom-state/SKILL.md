@@ -7,7 +7,7 @@ description: Implement reactive state management with Effect Atom for React appl
 
 Effect Atom is a reactive state management library for Effect that seamlessly integrates with React.
 
-`@effect/atom-react@4.0.6` requires React `>=19.0.0 <20.0.0`.
+`@effect/atom-react@4.1.0` requires React `>=19.0.0 <20.0.0`.
 Keep the adapter at the same version as `effect`; core atoms live in `effect/reactivity`, and
 React bindings live in `@effect/atom-react` (`packages/atom/react` upstream).
 Core reactivity APIs carry `@stability unstable` and may break in minor releases.
@@ -15,7 +15,7 @@ Core reactivity APIs carry `@stability unstable` and may break in minor releases
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Inspect `git show effect@4.0.6:<path>` there for this baseline; main may be ahead.
+Inspect `git show effect@4.1.0:<path>` there for this baseline; main may be ahead.
 
 Reference this for:
 
@@ -348,7 +348,10 @@ run. Refreshes and tracked-dependency changes run normally; an `Initial` seed
 never skips. Prefer the default unless avoiding the initial client run is worth
 this dependency-tracking tradeoff.
 
-Serializable codecs encode/decode `Schema.Json`. Schema-invalid hydration data
+Serializable codecs encode/decode `Schema.Json`; the public `Atom.Serializable`
+type now reflects this, so encoded results may need narrowing.
+`AsyncResult.isInterrupted` returns a boolean; use `AsyncResult.isFailure` when
+you need failure-type narrowing. Schema-invalid hydration data
 or an unencodable streamed initial result falls back to client computation;
 defects are not swallowed. Existing subscribers receive hydration immediately,
 and older dehydrated AsyncResults do not overwrite newer results. A hydrated
@@ -358,7 +361,7 @@ value is not a freshness guarantee—choose SWR separately.
 
 Atoms can return `AsyncResult` types for explicit error handling:
 
-In 4.0.6, data-last `AsyncResult.flatMap` can change the success type.
+In 4.1.0, data-last `AsyncResult.flatMap` can change the success type.
 `AsyncResult.all` rebuilds a failure's `previousSuccess` in the complete aggregate
 shape using every input's current or previous value; if any input lacks a value,
 the aggregate has no previous success. Async atom failures retain the latest

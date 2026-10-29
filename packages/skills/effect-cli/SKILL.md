@@ -21,10 +21,8 @@ scalars containing colon-whitespace or a trailing colon: quote those values.
 ## Import Pattern
 
 The CLI APIs are marked `@stability unstable` even at the stable package release.
-Baseline: **Effect 4.0.6**. In the Effect source checkout, read
-`git show effect@4.0.6:packages/effect/src/cli/<module>.ts`; main may be newer.
-`withOptionalValue`, boolean negation combinators, and `Command.validate` ship
-in this tag despite their upstream `@since 4.1.0` annotations.
+Baseline: **Effect 4.1.0**. In the Effect source checkout, read
+`git show effect@4.1.0:packages/effect/src/cli/<module>.ts`; main may be newer.
 
 ```typescript
 import { Argument, Command, Flag, Prompt } from 'effect/cli';
@@ -325,6 +323,17 @@ choice values rather than pre-escaping your domain values.
 PowerShell completions are available through `--completions powershell` or
 `--completions pwsh`.
 
+### Help output and repeated flags
+
+Single-valued flags reject repeated occurrences. Use `Flag.atLeast`, `Flag.atMost`,
+or `Flag.between` when multiple values are intended. `CliOutput.Presenter` lets a
+host suppress, redirect, or replace built-in help, invocation-error, and version
+output. Custom formatters read ancestor shared flags from `HelpDoc.inheritedFlags`,
+separate from local `flags`; `commandPath` and `globalFlagsScope` preserve provenance.
+`CliOutput.defaultFormatter` accepts `"full"`, `"summary"`, or `"none"` for inherited
+and global flag display. `Completions.fromCommand` converts a command tree for
+build-time completion generation without running the CLI.
+
 ### Terminal output capabilities
 
 `TerminalCapabilities.TerminalCapabilities` is a context reference. Its default
@@ -337,7 +346,9 @@ reads `ConfigProvider` and `Stdio`. Built-in help/version/error colors follow
   colors off-TTY except `0` / case-insensitive `false` (which mean not forcing,
   not disabling TTY color). Empty variables count as unset.
 - `canAnimate` needs stdout TTY; `canPrompt` needs stdin and stdout TTY. These
-  two are for application code, not automatic prompt/animation enforcement.
+  control application behavior. `Flag.withFallbackPrompt` and
+  `Argument.withFallbackPrompt` skip prompts when `canPrompt` is false and fail
+  with the original missing-option/argument error.
 - Provider faults become defects; the detection layer has no typed failure.
 
 <!-- typecheck -->

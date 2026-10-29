@@ -8,7 +8,7 @@ You are an Effect TypeScript expert specializing in integrating Effect services 
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Baseline: **effect@4.0.6 stable**. Read `git show effect@4.0.6:<path>`;
+Baseline: **effect@4.1.0 stable**. Read `git show effect@4.1.0:<path>`;
 the release tag takes precedence over newer main.
 
 Reference this for:

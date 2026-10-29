@@ -9,7 +9,7 @@ Everything ships from the `effect` package under `effect/rpc` — there is no `@
 
 ## Effect Source Reference
 
-The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read the `effect@4.0.6` tag for this skill; main may be newer. These APIs remain `@stability unstable` and may break in minor releases. Keep Effect-family packages on the same release.
+The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read the `effect@4.1.0` tag for this skill; main may be newer. These APIs remain `@stability unstable` and may break in minor releases. Keep Effect-family packages on the same release.
 
 Key files:
 
@@ -819,6 +819,14 @@ const ServerLayer = RpcServer.layer(StoreRpcs, { concurrency: 1 }).pipe(
 	)
 );
 ```
+
+### Disconnect observation
+
+Use `onDisconnect(clientId)` on `RpcServer.make` or its layer/HTTP wrappers to
+observe disconnects. Reading `Protocol.disconnects` yourself consumes cleanup
+notifications. Callbacks run concurrently after request interruption is requested,
+end with server shutdown, and log failures at `UnhandledLogLevel`.
+`RpcTest.makeClient` also accepts `disableFatalDefects` for request-local defects.
 
 ## Common Mistakes
 

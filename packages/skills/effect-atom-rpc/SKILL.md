@@ -5,9 +5,9 @@ description: Build reactive Atom-aware RPC clients for React/Atom UIs using Atom
 
 You are an Effect TypeScript expert specializing in `effect/reactivity/AtomRpc` — the reactive RPC client for Atom-driven frontends.
 
-Baseline: `effect@4.0.6`; inspect that tag in the Effect source reference.
+Baseline: `effect@4.1.0`; inspect that tag in the Effect source reference.
 Core reactivity APIs are `@stability unstable` and may break in minor releases.
-Use matching Effect-family versions; `@effect/atom-react@4.0.6` requires React 19.
+Use matching Effect-family versions; `@effect/atom-react@4.1.0` requires React 19.
 
 ## When to use this skill
 
@@ -137,7 +137,7 @@ AtomRpc.Service<UsersClient>()('UsersClient', {
 Do not cast a partial function to `any`; that hides missing methods, payload
 mistakes, and wrong result/error types.
 
-Default RPC span names are the method name alone in 4.0.6. An explicit
+Default RPC span names are the method name alone in 4.1.0. An explicit
 `spanPrefix` retains a client-specific prefix. Client/server span kinds and
 `rpc.system.name` / `rpc.method` attributes identify the transport operation.
 
@@ -297,7 +297,7 @@ A `query` re-fires when *any* of its declared keys appears in an invalidation ev
 
 For more advanced invalidation patterns (e.g., conditional invalidation, debounced invalidation), use `Reactivity.invalidate(keys)` and `Reactivity.mutation(effect, keys)` directly inside Atom-runtime effects.
 
-In 4.0.6, applications can augment `Keys` in
+In 4.1.0, applications can augment `Keys` in
 `effect/reactivity/Reactivity` to declare names and record-ID types, for example
 `interface Keys { readonly users: string; readonly events: never }`. Then
 `{ users: ['u1'] }` and `['events']` are accepted, but undeclared names and numeric

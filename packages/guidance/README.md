@@ -5,9 +5,11 @@ session. [`@enfect/claude`](../../plugins/claude) and
 [`@enfect/opencode`](../../plugins/opencode) copy them into their packages when
 they build.
 
-The guidance targets **Effect `4.0.6` (stable)**. See the
-[4.0.0 → 4.0.6 migration audit](docs/effect-4.0.6.md) and the
-[complete upstream release notes](docs/effect-4.0.6-changelog.md). The previous
+The guidance targets **Effect `4.1.0` (stable)**. See the
+[4.0.6 → 4.1.0 migration audit](docs/effect-4.1.0.md) and the
+[complete upstream release notes](docs/effect-4.1.0-changelog.md). The previous
+[4.0.0 → 4.0.6 audit](docs/effect-4.0.6.md) and
+[release notes](docs/effect-4.0.6-changelog.md), plus the
 [rc.116 → 4.0.0 audit](docs/effect-4.0.0.md) and
 [release notes](docs/effect-4.0.0-changelog.md) remain available as history.
 

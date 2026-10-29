@@ -7,9 +7,9 @@ You are an Effect TypeScript expert. This skill is a **migration reference** —
 
 ## Effect Source Reference
 
-Baseline: **Effect 4.0.6**. The source checkout is at
+Baseline: **Effect 4.1.0**. The source checkout is at
 `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`; read exact release
-files with `git show effect@4.0.6:<path>`, not a potentially newer main.
+files with `git show effect@4.1.0:<path>`, not a potentially newer main.
 Check the consuming project's installed version before using these contracts.
 
 Reference this for:
@@ -19,6 +19,17 @@ Reference this for:
 - SchemaTransformation module: `packages/effect/src/SchemaTransformation.ts`
 - SchemaGetter module: `packages/effect/src/SchemaGetter.ts`
 - Schema representation model and reference policy: `packages/effect/src/SchemaRepresentation.ts`
+
+### 4.1.0 boundary checks
+
+`Schema.String.check(Schema.isAscii())` accepts only ASCII strings.
+`Schema.DurationFromIsoString` handles exact ISO 8601 duration strings, rejecting
+variable-length years/months. `Schema.Record` values cannot use `optional` or
+`optionalKey`; use `Schema.UndefinedOr` for undefined values. Enum keys declare
+each enum member as a required property. Checks preserve `httpApiStatus` metadata;
+clear it explicitly with `.annotate({ httpApiStatus: undefined })` when needed.
+`Schema.fromJsonString` derives encoded content declarations from its content
+schema rather than explicit encoded-string content annotations.
 
 ## 1. Key Renames (find-and-replace safe)
 
@@ -633,12 +644,13 @@ now expose `matchOrElse(value, cases, fallback)` and its curried
 `matchOrElse(cases, fallback)(value)` form. Use exhaustive `.match` for closed
 business decisions. Use `.matchOrElse` when all remaining cases genuinely share
 one behavior. The `toTaggedUnion` helper narrows the fallback to omitted variants;
-the direct `TaggedUnion` overload types its fallback as the full union.
+direct `TaggedUnion` also narrows its fallback to unmatched variants. Annotate
+handler return types instead of supplying explicit output type arguments.
 Neither matcher decodes unknown input. See `effect-pattern-matching` for a checked example.
 Both schemas expose `.tag`: the chosen discriminator key for `toTaggedUnion`,
 and `'_tag'` for `TaggedUnion`. Duplicate discriminants throw at construction,
 including nested unions and numeric/string collisions such as `1` and `'1'`.
-There is no compile-time uniqueness guarantee in 4.0.6.
+There is no compile-time uniqueness guarantee in 4.1.0.
 
 ### JSON Schema import, conversion, and Standard Schema
 
@@ -830,7 +842,9 @@ Key exports:
 `SchemaIssue.InvalidValue`, rather than a thrown conversion error.
 `encodeBase64Url({ padding: true })` retains `=` padding; the default is unpadded.
 `splitKeyValue` splits each pair at its first separator and preserves the rest
-of the value (including base64 padding). Missing/empty keys or values are skipped;
+of the value (including base64 padding). Missing/empty keys or values are skipped
+by default. Options `trim` and `keepEmptyValues` both default to `false`; enable
+them to trim pairs or retain empty values, respectively;
 an empty key/value separator uses only the first two characters.
 
 Bracket-path parsing for `fromFormData` / `fromURLSearchParams` materializes

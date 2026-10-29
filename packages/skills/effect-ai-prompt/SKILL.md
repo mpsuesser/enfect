@@ -7,7 +7,7 @@ description: Build prompts for Effect AI using messages, parts, and composition 
 
 Master the Effect AI Prompt API for building type-safe conversations with language models.
 
-Baseline: `effect@4.0.6`; inspect that tag in the Effect source reference.
+Baseline: `effect@4.1.0`; inspect that tag in the Effect source reference.
 `effect/ai` APIs remain `@stability unstable` and can break in minor releases.
 Keep provider packages on the same version as `effect`.
 
@@ -707,6 +707,11 @@ const withContext = pipe(
 	withSystemPrompt('You are an expert TypeScript developer.')
 );
 ```
+
+`Tool.make` / `Tool.dynamic` can use `toModelOutput` to keep a typed application
+result while sending text/file parts to the model. `Prompt.ToolResultPart` carries
+the optional model output; `Prompt.toolModelOutputToText` renders a text fallback
+with file placeholders for providers without native support.
 
 ### Tool Interaction History
 

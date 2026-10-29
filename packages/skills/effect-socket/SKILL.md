@@ -8,7 +8,7 @@ description: Build pull-based TCP, Unix, TLS, WebSocket, and UDP transports with
 ## Source reference
 
 Read `packages/effect/src/socket/{Socket,SocketServer,DatagramSocket}.ts` at
-`effect@4.0.6` in the Effect reference. Platform adapters live in
+`effect@4.1.0` in the Effect reference. Platform adapters live in
 `packages/platform/node-shared/src/{NodeSocket,NodeSocketServer}.ts`; Node and
 Bun expose these as `NodeSocket` / `BunSocket` and their server counterparts.
 These APIs remain `@stability unstable` and may break in minor releases despite
@@ -84,7 +84,8 @@ const receive = Effect.gen(function* () {
 ```
 
 Use `NodeSocket.layerWebSocketConstructor` or
-`NodeSocket.layerWebSocketConstructorWS` on Node and
+`NodeWS.layerWebSocketConstructor` on Node (import `NodeWS` from
+`@effect/platform-node` or `@effect/platform-node-shared`) and
 `BunSocket.layerWebSocketConstructor` on Bun. Platform `layerWebSocket(url, options)`
 conveniences supply the constructor. Core `Socket.layerWebSocket` requires it.
 Constructors accept compatible browser, Bun, and Node implementations without
@@ -100,6 +101,20 @@ wraps a scoped transport acquisition. Pausable transports pause at `highWaterMar
 default buffer is unbounded. Set `highWaterMark` explicitly to fail with
 `SocketReadError` when that byte bound is exceeded. Text-frame
 buffering counts UTF-8 bytes, not string length.
+
+Node's default constructor now uses global `WebSocket`, including connections
+with handshake headers. It cannot pause reads: buffering is unbounded unless a
+`highWaterMark` is set, which fails with `SocketReadError` on overflow. Connection
+errors are generic `ErrorEvent`s, custom `Host` is ignored, outgoing compression
+is disabled, and connections use undici's global dispatcher. Choose
+`NodeWS.layerWebSocketConstructor` for the previous `ws` behavior, including
+`ws`-specific methods. `NodeSocket.NodeWS` / `BunSocket.NodeWS` were removed;
+use `NodeWS.WebSocket` on Node and import `ws` directly on Bun.
+Node platform packages now require Node.js 22.19.0 or newer.
+
+Node stream/socket `chunkSize` now bounds chunks per pull (default 4096).
+Use the NodeStream `readSize` option for byte read requests; `chunkSize: Infinity`
+permits unbounded batching.
 
 ## TCP, Unix, and TLS
 
@@ -207,7 +222,7 @@ rather than becoming accept-loop failures; add application-level supervision
 where they must stop the service. HTTP upgrades yield the same Socket interface;
 see `effect-http-server`.
 
-Node HTTP/1.1 clients and servers also support **raw upgrades** in 4.0.6:
+Node HTTP/1.1 clients and servers also support **raw upgrades** in 4.1.0:
 `HttpClientRequest.upgrade` requests one and `HttpClientResponse.upgrade` yields
 a Socket whose reader scope owns the connection. `HttpApiSchema.Upgrade`
 clients return `{ headers, socket }`.

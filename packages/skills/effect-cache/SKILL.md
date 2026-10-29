@@ -7,8 +7,8 @@ You are an Effect TypeScript expert specializing in in-memory caching with `Cach
 
 ## Effect Source Reference
 
-Baseline: **effect@4.0.6 stable**. Read exact source with
-`git show effect@4.0.6:packages/effect/src/<Module>.ts`, not newer main.
+Baseline: **effect@4.1.0 stable**. Read exact source with
+`git show effect@4.1.0:packages/effect/src/<Module>.ts`, not newer main.
 
 `Effect.cachedWithTTL` and `Effect.cachedInvalidateWithTTL` accept either a fixed Duration input or an Exit-dependent
 TTL function, so success and failure retention can differ. Allocate the cache

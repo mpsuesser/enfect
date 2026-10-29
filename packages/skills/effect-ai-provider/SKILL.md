@@ -7,7 +7,7 @@ description: Configure and compose AI provider layers using @effect/ai packages.
 
 Configure AI provider layers for language model integration using Effect's AI ecosystem.
 
-Baseline: `effect@4.0.6`; inspect the matching tag in the Effect source reference.
+Baseline: `effect@4.1.0`; inspect the matching tag in the Effect source reference.
 Keep `effect` and every `@effect/*` package on the same version. Core AI APIs and
 provider clients, models, and generated schemas carry `@stability unstable`:
 minor releases may include breaking changes, even with `effect/ai` import paths.
@@ -507,6 +507,21 @@ export class AiWriter extends Context.Service<
 }
 ```
 
+`AiError.NetworkError` records `method` and `url` instead of `request` and may
+carry an unredacted `HttpClientError` in `cause`; inspect it deliberately when
+logging. Providers use `NetworkError.fromHttpClientError`; `fromRequestError`
+remains available. `AiError.HttpRequestDetails`, `Response.HttpRequestDetails`,
+and request fields in HTTP context/response metadata were removed.
+
+OpenAI maximum-output exhaustion and Anthropic context-window exhaustion report
+`finishReason: 'length'`. A truncated OpenAI response with a tool call does not
+execute the handler; handle truncation before continuing the tool loop.
+
+Anthropic's generated Files and Skills clients now decode GA resource shapes,
+with `page` / `next_page` pagination and `File` / `Blob` uploads. Check the pinned
+provider changelog before using these low-level clients, including migration of
+dated beta headers; the released beta response shapes are not decoded.
+
 ## Custom Error Wrapping
 
 `AiError.AuthenticationError` accepts an optional `description` and
@@ -521,8 +536,7 @@ not a blanket transient retry. Keep redacted credentials out of logs.
 Malformed provider envelopes and SSE schema failures now use nonretryable
 `InvalidResponseError`, with optional HTTP context. This differs from retryable
 `InvalidOutputError` for decoded model output. Do not retry malformed wire data
-just because earlier versions reported it as output validation. Exact 4.0.6
-contains this reason despite an upstream `@since 4.1.0` annotation.
+just because earlier versions reported it as output validation.
 
 OpenAI Responses additionally supports GPT-5.6+ explicit prompt cache breakpoints
 through `Prompt` metadata and `prompt_cache_options` model config; see

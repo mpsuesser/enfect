@@ -9,7 +9,7 @@ Use this skill when implementing typeclasses that provide reusable abstractions 
 
 ## Source Reference
 
-Baseline: **Effect 4.0.6**. Read `git show effect@4.0.6:packages/effect/src/Function.ts`,
+Baseline: **Effect 4.1.0**. Read `git show effect@4.1.0:packages/effect/src/Function.ts`,
 `Order.ts`, and `Duration.ts` in the Effect source checkout; main may be newer.
 The typeclasses below are application-defined, not built-in Effect services.
 The `dual` and `Order.mapInput` contracts are unchanged from 4.0.0.

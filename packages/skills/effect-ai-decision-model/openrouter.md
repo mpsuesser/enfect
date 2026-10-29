@@ -1,7 +1,8 @@
 # OpenRouter decision adapter
 
-Baseline: `@effect/ai-openrouter@4.0.6`, aligned with `effect`. This adapter calls
-OpenRouter's **alpha Decisions API**, not chat completions.
+Baseline: `@effect/ai-openrouter@4.1.0`, aligned with `effect`. This adapter calls
+OpenRouter's **alpha Decisions API**, not chat completions. This adapter does
+not enable images or locate; core rejects these inputs before the request.
 
 `OpenRouterDecisionModel.make({ model, config? })` returns
 `Effect<DecisionModel, never, OpenRouterClient>`; `layer` takes the same options
@@ -71,5 +72,5 @@ const configured = decision.pipe(
   serving-provider values when absent.
 
 Pinned source: `packages/ai/openrouter/src/{OpenRouterDecisionModel,OpenRouterClient,OpenRouterConfig,OpenRouterSchema}.ts`
-at `effect@4.0.6`; corresponding `test/OpenRouterDecisionModel.test.ts` and
+at `effect@4.1.0`; corresponding `test/OpenRouterDecisionModel.test.ts` and
 `typetest/OpenRouterDecisionModel.tst.ts` cover adapter behavior and configuration.

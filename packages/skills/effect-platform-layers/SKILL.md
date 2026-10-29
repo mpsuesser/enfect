@@ -7,7 +7,7 @@ description: Structure Effect platform layer provision for cross-platform applic
 
 Master Effect platform layer provision for cross-platform applications. Use this skill when structuring applications that use Effect platform abstractions to ensure portability across Node.js and Bun environments.
 
-Targets **Effect 4.0.6**. Keep `effect` and `@effect/*` packages on the same version and inspect the `effect@4.0.6` source tag. APIs explicitly marked `@stability unstable` can change in minor releases, including third-party client surfaces such as NodeRedis.
+Targets **Effect 4.1.0**. Keep `effect` and `@effect/*` packages on the same version and inspect the `effect@4.1.0` source tag. APIs explicitly marked `@stability unstable` can change in minor releases, including third-party client surfaces such as NodeRedis.
 
 ## The Golden Rule
 
@@ -122,14 +122,14 @@ Each platform context (`NodeServices.layer`, `BunServices.layer`) provides these
 | **Path**                | `Path.Path`                               | Path manipulation (join, normalize, relative, etc.) | `effect`                  |
 | **Stdio**               | `Stdio.Stdio`                             | Standard I/O streams (stdin, stdout, stderr)        | `effect`                  |
 | **Terminal**            | `Terminal.Terminal`                       | Terminal/console I/O with ANSI support              | `effect`                  |
-| **Crypto**              | `Crypto.Crypto`                           | Cryptographic random bytes, UUIDs, and digests      | `effect`                  |
+| **Crypto**              | `SecureRandom.SecureRandom` / `Digest.Digest`                           | Cryptographic random bytes, UUIDs, and digests      | `effect/crypto`                  |
 | **ChildProcessSpawner** | `ChildProcessSpawner.ChildProcessSpawner` | Spawn and manage child processes                    | `effect/process` |
 
-`Crypto.Crypto` is included in the Node/Bun aggregate layers; browser applications can provide `BrowserCrypto.layer` when they need the crypto service. These aggregate layers are core service bundles: they do **not** provide specialized integrations such as HTTP clients/servers, sockets, workers, or Redis. For sockets, import `Socket.Socket` / `SocketServer.SocketServer` from `effect/socket` and provide socket-specific layers such as `NodeSocket.layerWebSocket(...)`, `NodeSocket.layerNet(...)`, `BunSocket.layerWebSocket(...)`, `BrowserSocket.layerWebSocket(...)`, or Node/Bun socket-server layers as appropriate.
+`SecureRandom` and `Digest` come from `effect/crypto`. Provide `NodeCrypto.layerSecureRandom` / `layerDigest`, their Bun/Deno/browser counterparts, or a combined crypto `layer` explicitly; the runtime aggregate layers do not include crypto. These aggregate layers are core service bundles: they do **not** provide specialized integrations such as HTTP clients/servers, sockets, workers, or Redis. For sockets, import `Socket.Socket` / `SocketServer.SocketServer` from `effect/socket` and provide socket-specific layers such as `NodeSocket.layerWebSocket(...)`, `NodeSocket.layerNet(...)`, `BunSocket.layerWebSocket(...)`, `BrowserSocket.layerWebSocket(...)`, or Node/Bun socket-server layers as appropriate.
 
 Runtime application/provider HTTP belongs behind Effect `HttpClient`, not raw `fetch`. Only a named low-level platform transport adapter may use fetch directly, with a documented justification and full ownership of interruption, status-before-decode, schema decoding, and typed errors. Provider adapters also own redacted diagnostic evidence and retry exhaustion; provider calls run outside database transactions, and retries apply only to proven-idempotent operations. In particular, do not decorate a shared client with automatic retry when it can execute ordinary non-idempotent POST/PATCH requests.
 
-`Migrator.fromFileSystem` now requires both `FileSystem.FileSystem` and `Path.Path`. `NodeServices.layer` and `BunServices.layer` already satisfy both. If a migration runtime provides only an individual file-system layer, add the matching host path layer too; on Windows, core `Path.layer` is not a substitute for a platform-aware path implementation because it uses POSIX semantics.
+`MigratorFileSystem.fromFileSystem` from `effect/sql/MigratorFileSystem` now requires both `FileSystem.FileSystem` and `Path.Path`. `NodeServices.layer` and `BunServices.layer` already satisfy both. If a migration runtime provides only an individual file-system layer, add the matching host path layer too; on Windows, core `Path.layer` is not a substitute for a platform-aware path implementation because it uses POSIX semantics.
 
 ### Service-specific DNS, UDP, and storage wiring
 
@@ -160,7 +160,11 @@ file-backed stores in separate subdirectories before using `clear`.
 
 ### Redis Layers
 
-Redis is deliberately outside the aggregate platform layers. `NodeRedis.layer` and `NodeRedis.layerConfig` use `redis` (node-redis), with a supported peer range of `redis >=5.0.0 <7.0.0`, and accept node-redis `RedisClientOptions`. When migrating from `ioredis`:
+Redis is deliberately outside the aggregate platform layers. `NodeRedis.layer` and `NodeRedis.layerConfig` use `redis` (node-redis), with a supported peer range of `redis >=5.0.0 <7.0.0`, and accept node-redis `RedisClientOptions` plus `Redis.PoolOptions` (`maxConnections`,
+`minConnections`, `idleTimeout`, `acquireTimeout`). `Redis.reserve` leases a
+dedicated connection for blocking commands so they do not stall the shared
+connection. Reserved connections are destroyed when their scope closes. Custom
+`Redis.make` implementations need `connect`; hand-written services need `reserve`. When migrating from `ioredis`:
 
 - Move host, port, TLS, and reconnect settings under `socket`.
 - Rename `db` to `database`.
@@ -174,14 +178,15 @@ The Node layer connects while it is built and therefore can fail with `Redis.Red
 
 <!-- typecheck -->
 ```typescript
-import { Console, Crypto, Effect, FileSystem, Path, Stream, Terminal } from 'effect';
+import { Console, Effect, FileSystem, Path, Stream, Terminal } from 'effect';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
+import { SecureRandom } from 'effect/crypto';
 
 const buildProject = Effect.gen(function* () {
 	const fs = yield* FileSystem.FileSystem;
 	const path = yield* Path.Path;
 	const terminal = yield* Terminal.Terminal;
-	const crypto = yield* Crypto.Crypto;
+	const crypto = yield* SecureRandom.SecureRandom;
 	const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
 	// Use Path for cross-platform paths
@@ -193,7 +198,7 @@ const buildProject = Effect.gen(function* () {
 	// Use Terminal dimensions and Crypto for output metadata
 	const columns = yield* terminal.columns;
 	const rows = yield* terminal.rows;
-	const buildId = yield* crypto.randomUUIDv7();
+	const buildId = yield* crypto.uuidV7();
 	yield* terminal.display(`Building project ${buildId} (${columns}x${rows})...\n`);
 
 	// Use ChildProcessSpawner for processes
@@ -320,6 +325,7 @@ const TestContext = Layer.mergeAll(
 		Terminal.make({
 			columns: Effect.succeed(80),
 			rows: Effect.succeed(24),
+			size: Effect.die('size not used in this test'),
 			readInput: Effect.die('readInput not used in this test'),
 			readLine: Effect.succeed('test input'),
 			display: () => Effect.void
@@ -355,7 +361,7 @@ it.effect('with layerNoop', () =>
 
 ### Shared composed layers and isolation
 
-In 4.0.6, composed layers (`provide`, `provideMerge`, `mergeAll`) are memoized
+In 4.1.0, composed layers (`provide`, `provideMerge`, `mergeAll`) are memoized
 by identity, not just their leaves. Reusing one composed layer shares its
 entire build within a MemoMap, including dependencies wrapped in `Layer.fresh`
 inside that composition. Wrap the **composed layer itself** with `Layer.fresh`

@@ -7,8 +7,8 @@ You are an Effect TypeScript expert specializing in pull-based streaming with `S
 
 ## Effect Source Reference
 
-Baseline: **effect@4.0.6 stable**. Inspect the paths below with
-`git show effect@4.0.6:<path>`; main may contain later APIs.
+Baseline: **effect@4.1.0 stable**. Inspect the paths below with
+`git show effect@4.1.0:<path>`; main may contain later APIs.
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
 Browse and read files there directly to look up APIs, types, and implementations.
@@ -869,6 +869,20 @@ const monitored = Schedule.exponential('100 millis').pipe(
 	)
 );
 ```
+
+### Completion, failures, and bounded pulls
+
+`Stream.groupBy` / `groupByKey` end their groups when upstream ends or fails.
+`grouped` / `rechunk` emit buffered elements before an upstream failure.
+Upstream failures in `run`, `peel`, `aggregate`, and `aggregateWithin` bypass
+`Sink.mapError`, `catch`, `catchCause`, and `orElse`; `Sink.onExit` observes them
+as interruption. Recover upstream failures on the stream itself.
+
+For Node stream/socket adapters, `chunkSize` now bounds chunks per pull (default
+4096), not byte size. `NodeStream` uses `readSize` for byte read requests;
+`chunkSize: Infinity` opts out of the per-pull bound. The unstable
+`effect/encoding/Csv` module offers streaming CSV parsing/writing over text or
+UTF-8 bytes, with schema adapters through `Schema.toCodecStringTree`.
 
 ## Common Mistakes
 

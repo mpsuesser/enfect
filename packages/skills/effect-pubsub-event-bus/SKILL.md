@@ -5,8 +5,8 @@ description: Build typed event buses using Effect PubSub and Stream. Use this sk
 
 # PubSub Event Bus with Effect v4
 
-Baseline: **effect@4.0.6 stable**. Inspect `PubSub.ts`, `Stream.ts`, and their
-implementations with `git show effect@4.0.6:packages/effect/src/<Module>.ts`
+Baseline: **effect@4.1.0 stable**. Inspect `PubSub.ts`, `Stream.ts`, and their
+implementations with `git show effect@4.1.0:packages/effect/src/<Module>.ts`
 in the Effect reference repository, rather than reading newer main as the contract.
 
 ## Overview

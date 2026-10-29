@@ -10,7 +10,7 @@ This skill provides a step-by-step template for converting existing async/Promis
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Baseline: **effect@4.0.6 stable**. Use `git show effect@4.0.6:<path>`;
+Baseline: **effect@4.1.0 stable**. Use `git show effect@4.1.0:<path>`;
 keep historical Before examples as migration input, not current guidance.
 
 Reference this for:
@@ -146,7 +146,7 @@ await `dispose()` on shutdown. Disposal interrupts managed fibers and waits for
 their cleanup before releasing layer resources. A shared memo map deduplicates
 acquisition, but does not remove each runtime's disposal obligation.
 
-Reuse identical layer objects: 4.0.6 memoizes composed layers too. Runtime layer
+Reuse identical layer objects: 4.1.0 memoizes composed layers too. Runtime layer
 build failures are cached; retry acquisition inside the layer or dispose and
 create another runtime. External concurrent disposal calls join cleanup, but
 runtime-owned fibers/finalizers do not wait on their own disposal.
@@ -253,7 +253,7 @@ export namespace Items {
 
 The service module below is self-contained. Its raw layer exposes the HTTP
 transport requirement; the composition root supplies the release-matched Bun
-transport. HTTP modules are `@stability unstable` in 4.0.6.
+transport. HTTP modules are `@stability unstable` in 4.1.0.
 
 <!-- typecheck -->
 ```typescript

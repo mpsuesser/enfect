@@ -3,7 +3,7 @@
 > **Source**: https://loggingsucks.com/
 > **Author**: Boris Tane
 
-> **Effect application note (4.0.6)**: This conceptual summary is not an API
+> **Effect application note (4.1.0)**: This conceptual summary is not an API
 > reference. Map useful fields to `Effect.annotateCurrentSpan` / `annotateLogs`;
 > extra log-message arguments are not automatically indexed annotations. Minimize
 > and redact personal/sensitive data, and keep high-cardinality identifiers out

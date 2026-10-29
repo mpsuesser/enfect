@@ -7,7 +7,7 @@ description: Use Effect FileSystem for platform-abstract file I/O with Node.js/B
 
 Use `effect` FileSystem for platform-abstract file I/O. Stock layers are provided for Node.js and Bun; `@effect/platform-browser` does not provide a FileSystem layer, so browser code needs a custom/injected implementation.
 
-Targets **Effect 4.0.6**. Match platform package versions to `effect`; verify APIs against the `effect@4.0.6` source tag rather than unreleased `main`.
+Targets **Effect 4.1.0**. Match platform package versions to `effect`; verify APIs against the `effect@4.1.0` source tag rather than unreleased `main`.
 
 ## Basic Pattern
 
@@ -353,8 +353,17 @@ const getFileInfo = Effect.gen(function* () {
 ```
 
 `stat` follows symbolic links; `lstat(path)` reports the link itself. Custom full
-implementations passed to `FileSystem.make` must implement `lstat`; `makeNoop`
-defaults it to `NotFound` unless overridden.
+implementations passed to `FileSystem.make` must implement `lstat` and
+`readDirectoryEntries`; `makeNoop` supplies defaults. When entry types are unknown,
+map directory names to `{ name, type: 'Unknown' }`. Wrappers that change directory
+listings must wrap both listing methods. `FileSystem.make` derives `glob`; apply
+custom overrides afterward with `FileSystem.of({ ...fs, glob: customGlob })`.
+
+The shared Node/Bun/Deno glob implementation uses `/` separators and backslash
+escapes, without Node extglob expansion. Results are relative to `root` unless
+the pattern is absolute. Dotfiles require an explicit name or `dot: true`.
+Unreadable wildcard-reached directories are skipped; read errors at the root or
+a leading literal directory propagate. `Glob` is experimental.
 
 `File.Info.dev` is `bigint`; `ino`, `rdev`, `nlink`, and `blocks` are
 `Option<bigint>`. `mode`, `uid`, and `gid` remain numbers. Node/Bun preserve
@@ -549,7 +558,7 @@ const checkFileSize = Effect.gen(function* () {
 
 ### SystemErrorTag Values
 
-FileSystem operations fail with `PlatformError`. Its `reason` is `BadArgument` or `SystemError`. In **4.0.6**, `SystemError._tag` is the normalized category below; match `error.reason._tag` directly (there is no `reason.tag` field):
+FileSystem operations fail with `PlatformError`. Its `reason` is `BadArgument` or `SystemError`. In **4.1.0**, `SystemError._tag` is the normalized category below; match `error.reason._tag` directly (there is no `reason.tag` field):
 
 - `AlreadyExists` - File/directory already exists
 - `BadResource` - Invalid file descriptor or handle
@@ -565,7 +574,7 @@ FileSystem operations fail with `PlatformError`. Its `reason` is `BadArgument` o
 
 For an unknown error at a boundary, `PlatformError.isPlatformError(value)` narrows it to the wrapper before inspecting `reason`.
 
-Node/Deno classify native `EPERM` as `PermissionDenied` in 4.0.6. Node's
+Node/Deno classify native `EPERM` as `PermissionDenied` in 4.1.0. Node's
 `realPath` also handles readable Windows AppContainer paths with inaccessible
 ancestors; do not add an ancestor-access precheck that rejects such paths.
 

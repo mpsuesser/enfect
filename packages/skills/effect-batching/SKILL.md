@@ -8,7 +8,7 @@ You are an Effect TypeScript expert specializing in request batching, deduplicat
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Baseline: **effect@4.0.6 stable**. Read source with `git show effect@4.0.6:<path>`;
+Baseline: **effect@4.1.0 stable**. Read source with `git show effect@4.1.0:<path>`;
 the exact tag, not a newer main checkout, defines these contracts.
 
 Reference this for:
@@ -478,6 +478,12 @@ class Users extends Context.Service<
 }
 ```
 
+In 4.1.0 Persistence backings use `<encodedStoreId>:<key>` keys. Existing KVS
+entries become unreachable, including persisted chat histories; cached values
+are recomputed. Redis entries change only for store IDs containing `%` or `:`.
+Old entries are neither migrated nor removed automatically. Plan a data migration
+when stored history must survive the upgrade.
+
 ## SQL Integration with SqlResolver
 
 `SqlResolver` (from `effect/sql`) provides schema-validated, batched SQL resolvers.
@@ -485,6 +491,7 @@ It remains marked `@stability unstable` even though its import path has no
 `unstable` segment; check its release-specific contract when upgrading. Import:
 
 ```typescript
+import { Array } from 'effect';
 import { SqlResolver } from 'effect/sql';
 ```
 
@@ -497,7 +504,7 @@ const Insert = SqlResolver.ordered({
 	Request: Schema.String,
 	Result: Schema.Struct({ id: Schema.Number, name: Schema.String }),
 	execute: (names) =>
-		sql`INSERT INTO users ${sql.insert(names.map((name) => ({ name })))} RETURNING *`
+		sql`INSERT INTO users ${sql.insert(Array.map(names, (name) => ({ name })))} RETURNING *`
 });
 
 const insertUser = SqlResolver.request(Insert);

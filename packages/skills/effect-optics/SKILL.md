@@ -7,9 +7,9 @@ You are an Effect TypeScript expert specializing in functional optics for immuta
 
 ## Effect Source Reference
 
-Baseline: **Effect 4.0.6**. The source checkout is at
+Baseline: **Effect 4.1.0**. The source checkout is at
 `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Read exact-tag files with `git show effect@4.0.6:<path>`; main may be newer.
+Read exact-tag files with `git show effect@4.1.0:<path>`; main may be newer.
 The public Optic contracts below are unchanged from 4.0.0.
 
 Key reference files:

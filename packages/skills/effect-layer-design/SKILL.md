@@ -10,7 +10,7 @@ Create layers that construct services while managing their dependencies cleanly.
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Baseline: **effect@4.0.6 stable**. Use `git show effect@4.0.6:<path>`;
+Baseline: **effect@4.1.0 stable**. Use `git show effect@4.1.0:<path>`;
 exact-tag source takes precedence over a newer main checkout.
 
 Reference this for:
@@ -474,7 +474,7 @@ An enclosing provide/runtime allocation is reused by nested provides; sibling
 `Effect.provide` calls build separate copies. Use `{ local: true }` to isolate
 the provided subtree explicitly.
 
-In 4.0.6, `Layer.provide`, `provideMerge`, and `mergeAll` also memoize the **whole
+In 4.1.0, `Layer.provide`, `provideMerge`, and `mergeAll` also memoize the **whole
 composition**. Reusing that composed layer shares its build even when an inner
 dependency uses `Layer.fresh`. For independent copies, apply `Layer.fresh` to the
 entire composition. The first requester owns a shared in-progress build;

@@ -78,7 +78,7 @@ good = do
 | `node:https`         | `HttpClient.HttpClient`                                               |
 | `node:stream`        | `Stream` from effect                                                  |
 | `node:readline`      | `Terminal.Terminal`                                                   |
-| `node:crypto`        | `Crypto.Crypto` from `effect/Crypto` or a wrapped Effect service |
+| `node:crypto`        | `SecureRandom` / `Digest` from `effect/crypto` or a wrapped Effect service |
 
 **Exceptions:**
 

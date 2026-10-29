@@ -9,7 +9,7 @@ This skill covers the client side only: building clients, transports, serializat
 
 ## Effect Source Reference
 
-The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read the `effect@4.0.6` tag for this skill; main may be newer. These APIs remain `@stability unstable` and may break in minor releases. Keep Effect-family packages on the same release.
+The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read the `effect@4.1.0` tag for this skill; main may be newer. These APIs remain `@stability unstable` and may break in minor releases. Keep Effect-family packages on the same release.
 
 Key files:
 
@@ -147,7 +147,7 @@ client.GetUser(
 	{
 		headers: { 'x-tenant': 't1' }, // Headers.Input — per-call headers
 		context: Context.empty(), // Context<never> — rarely needed (cluster plumbing)
-		discard: true // fire-and-forget: see below
+		discard: true // waits for acknowledgement, discards result: see below
 	}
 );
 
@@ -180,7 +180,7 @@ The requirements channel of each call is the payload schema's `EncodingServices`
 
 ### `discard: true`
 
-Sends the request and skips response handling entirely: the method returns `Effect<void, RpcClientError | MiddlewareErrors>`. The rpc's *declared* error disappears from the channel, but transport and middleware errors remain. No client entry is registered, so the server's exit is dropped on the floor. Use for fire-and-forget commands; over HTTP the POST is still awaited (the response body is just ignored).
+Sends the request and waits for the server acknowledgement: the method returns `Effect<void, RpcClientError | MiddlewareErrors>`. The rpc's *declared* error disappears from the channel, but transport and middleware errors remain. A pending client entry tracks the acknowledgement, while the server's result is discarded. Completion confirms acknowledgement, not handler completion. SchemaBinary peers must be upgraded together because the new discard field changes the envelope fingerprint.
 
 ---
 

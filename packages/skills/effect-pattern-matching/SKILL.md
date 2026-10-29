@@ -9,9 +9,9 @@ Use this skill when working with discriminated unions, ADTs, conditional logic, 
 
 ## Effect Source Reference
 
-Baseline: **Effect 4.0.6**. The source checkout is at
+Baseline: **Effect 4.1.0**. The source checkout is at
 `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Read exact-tag files with `git show effect@4.0.6:<path>`; main may be newer.
+Read exact-tag files with `git show effect@4.1.0:<path>`; main may be newer.
 
 Reference this for:
 
@@ -36,11 +36,11 @@ For domain/wire models, prefer class variants combined with
 exhaustiveness, `.guards` for narrowing decoded values, and `.matchOrElse` for
 intentional partial matching. Direct `Schema.TaggedUnion` creates canonical
 `_tag` object variants. Both expose data-first and data-last `matchOrElse` forms;
-the `toTaggedUnion` fallback excludes handled variants, while direct
-`Schema.TaggedUnion.matchOrElse` types its fallback as the full union.
+both forms exclude handled variants from the fallback. Annotate handler return
+types instead of passing explicit output type arguments.
 Both expose `.tag` with the chosen discriminator key (`'_tag'` for direct
 `TaggedUnion`). Duplicate discriminants are runtime construction errors, not a
-compile-time uniqueness guarantee in 4.0.6.
+compile-time uniqueness guarantee in 4.1.0.
 
 <!-- typecheck -->
 ```typescript
@@ -660,7 +660,7 @@ formatTodo('Todo', { status: 'Active', title: 'Write tests' });
 
 `Match.exhaustive`, `Match.orElse`, `Match.option`, and `Match.result` all compile a `Match.fn` matcher to a function with the selector's original parameters. Prefer `Match.type<I>()` when the matched value itself is the function's only input; use `Match.fn` when matching one argument, a derived property, or another projection while retaining surrounding arguments.
 
-### Object keys and tuple-prefix patterns in 4.0.6
+### Object keys and tuple-prefix patterns in 4.1.0
 
 `when`, `not`, `whenOr`, and `whenAnd` reject object-pattern keys absent from
 every remaining object variant. Numeric keys normalize to string keys for this
@@ -895,6 +895,13 @@ Before completing pattern matching implementation:
 - [ ] Pattern matching is declarative (no imperative conditionals)
 - [ ] Pipeline-friendly composition
 - [ ] Type-safe refinement in each branch
+
+### Literal-union dispatch
+
+For string/number literal unions, unstable `Match.literals` and
+`Match.literalsExhaustive` accept records of handlers. Use the exhaustive form
+when every literal must be covered; keep schema-union matching for decoded
+structured variants.
 
 ## Common Patterns Summary
 

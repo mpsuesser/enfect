@@ -7,7 +7,7 @@ An opinionated [oxlint](https://oxc.rs/docs/guide/usage/linter) plugin for [Effe
 
 The plugin ships **74 rules** namespaced under `effect/`, including all 16 rules from [`dmmulroy/anti-slop`](https://github.com/dmmulroy/anti-slop). Rules are implemented with the [`effect-oxlint`](https://github.com/mpsuesser/effect-oxlint) SDK and run as standard oxlint custom rules.
 
-The runtime and recommendations target **Effect 4.0.6 (stable)**. Area imports use
+The runtime and recommendations target **Effect 4.1.0 (stable)**. Area imports use
 `effect/http`, `effect/http-api`, `effect/process`, etc.; the old `unstable` paths
 are removed. APIs marked `@stability unstable` can still change in minor releases.
 Keep directly used Effect-family packages on the same release version.
@@ -377,7 +377,7 @@ import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 
 // ✅  Provide the platform layer at the runtime boundary
-import * as Crypto from 'effect/Crypto';
+import { Digest, SecureRandom } from 'effect/crypto';
 import * as Stream from 'effect/Stream';
 ```
 

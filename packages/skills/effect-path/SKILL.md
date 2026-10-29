@@ -7,7 +7,7 @@ description: Use effect Path for platform-abstract file path operations includin
 
 Use effect Path abstraction for platform-abstract file path operations. Apply this skill when working with file paths, joining segments, resolving absolute paths, or converting between file URLs and paths. `Path.layer` supplies POSIX semantics from `effect`; Node.js and Bun platform layers provide host-specific path semantics. `@effect/platform-browser` does not provide a `BrowserPath` layer, so browser code should provide `Path.layer` or a custom layer explicitly.
 
-Targets **Effect 4.0.6** (`effect@4.0.6` source tag). In browsers without `process.cwd()`, supply an absolute POSIX base to `resolve`/`toFileUrl` when using `Path.layer`; it does not invent a browser working directory.
+Targets **Effect 4.1.0** (`effect@4.1.0` source tag). In browsers without `process.cwd()`, supply an absolute POSIX base to `resolve`/`toFileUrl` when using `Path.layer`; it does not invent a browser working directory.
 
 ## Import Pattern
 
@@ -285,15 +285,16 @@ const buildOutputPath = Effect.gen(function* () {
 
 ## File-System Migration Loaders
 
-In Effect v4, `Migrator.fromFileSystem(directory)` requires both `FileSystem.FileSystem` and `Path.Path`. Migration modules are imported through `path.toFileUrl(path.join(directory, file))` so absolute Windows paths are valid ESM specifiers.
+In Effect v4, `MigratorFileSystem.fromFileSystem(directory)` requires both `FileSystem.FileSystem` and `Path.Path`. Migration modules are imported through `path.toFileUrl(path.join(directory, file))` so absolute Windows paths are valid ESM specifiers.
 
 <!-- typecheck -->
 ```typescript
 import { FileSystem, Path } from 'effect';
 import * as Migrator from 'effect/sql/Migrator';
+import * as MigratorFileSystem from 'effect/sql/MigratorFileSystem';
 
 const loader: Migrator.Loader<FileSystem.FileSystem | Path.Path> =
-	Migrator.fromFileSystem('./migrations');
+	MigratorFileSystem.fromFileSystem('./migrations');
 ```
 
 Aggregate layers such as `NodeServices.layer` and `BunServices.layer` already provide both requirements. If wiring individual layers, provide both the file-system layer and the host-aware path layer. On Windows, do not use the core POSIX `Path.layer` for a Windows migration directory; use the runtime platform's path layer so drive letters and separators are converted correctly.

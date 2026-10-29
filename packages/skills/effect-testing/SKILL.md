@@ -10,7 +10,7 @@ This skill provides comprehensive guidance for testing Effect-based applications
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-This skill targets **Effect 4.0.6**. Inspect `git show effect@4.0.6:<path>` there
+This skill targets **Effect 4.1.0**. Inspect `git show effect@4.1.0:<path>` there
 for APIs, types, and implementations; unreleased main may be ahead. Keep
 `@effect/vitest` and all Effect-family packages on that exact release.
 
@@ -183,7 +183,7 @@ it.effect('test with resources', () =>
 ### Effect-returning setup hooks
 
 Import `beforeAll` / `beforeEach` from `@effect/vitest`, not directly from
-Vitest, when the callback returns an Effect. In 4.0.6 the adapter runs and awaits
+Vitest, when the callback returns an Effect. In 4.1.0 the adapter runs and awaits
 that Effect with a Scope. Other required services must be explicitly provided;
 the hooks do not automatically inherit an `it.effect` test environment or suite
 service context.
@@ -349,7 +349,8 @@ Use `Layer.succeed` for complete static fakes. Reserve `Layer.mock` for tiny loc
 Share a layer across multiple tests with the `layer` function:
 
 This shares **service state**, not just construction cost. Mutable fakes must
-reset explicitly between tests or be provided separately inside each test.
+reset explicitly between tests or use `{ buildPerTest: true }` on `layer` /
+`it.layer` to rebuild selected services per test; enclosing services stay shared.
 Do not write independent initial-state assertions against one shared counter.
 
 ```typescript
@@ -536,7 +537,7 @@ it.effect('should track time correctly', () =>
 
 The clock separates Unix wall time (`Clock.currentTimeMillis` / `currentTimeNanos`) from monotonic elapsed time (`Clock.monotonicTimeNanos`). `TestClock.adjust` advances both, while `TestClock.setTime` may move wall time backward without decreasing monotonic time. Duration measurements such as `Effect.timed` therefore remain stable across wall-clock corrections. Nanosecond wall time also remains precise for large finite timestamps, and reads stay total after an infinite adjustment.
 
-`TestClock.layer()` installs a tracking scheduler in 4.0.6: adjustment also
+`TestClock.layer()` installs a tracking scheduler in 4.1.0: adjustment also
 observes sleeps reached after multiple scheduler hops. A clock from
 `TestClock.make` manually provided without that layer has only the one-hop
 guarantee. Interrupted sleeps are removed from pending sleeps. Busy fibers can
@@ -547,27 +548,22 @@ Deferred/Latch rather than relying on time advancement to prove external I/O.
 
 ### Deterministic cryptographic randomness
 
-`TestCrypto` from `effect/testing` supplies seeded random bytes/numbers,
-shuffles, UUIDs, and ULIDs while delegating digests to an existing platform
-Crypto. Each `make(seed)` evaluation/layer build restarts the sequence; ordering
-of random operations matters. UUIDv7/ULID also need clock control.
+Mock the crypto family a test uses with `Layer.mock`. Supply fixture values for
+required methods; unimplemented methods fail as defects if called. `TestCrypto`
+was removed in 4.1.0. Tests of real UUIDv7/ULID ordering also need clock control.
 
 <!-- typecheck -->
 ```ts
-import { BunCrypto } from '@effect/platform-bun';
-import { Crypto, Effect, Layer } from 'effect';
-import { TestClock, TestCrypto } from 'effect/testing';
+import { Effect, Layer } from 'effect';
+import { SecureRandom } from 'effect/crypto';
 
-const cryptoLayer = TestCrypto.layer('uuid-test').pipe(
-	Layer.provide(BunCrypto.layer)
-);
+const cryptoLayer = Layer.mock(SecureRandom.SecureRandom, {
+	uuidV7: () => Effect.succeed('01932f24-1000-7000-8000-000000000001')
+});
 const deterministicUuid = Effect.gen(function* () {
-	const crypto = yield* Crypto.Crypto;
-	return yield* crypto.randomUUIDv7();
-}).pipe(
-	Effect.provide(cryptoLayer),
-	Effect.provide(TestClock.layer())
-);
+	const random = yield* SecureRandom.SecureRandom;
+	return yield* random.uuidV7();
+}).pipe(Effect.provide(cryptoLayer));
 ```
 
 These deterministic values are test fixtures, never security-sensitive tokens.
@@ -806,6 +802,13 @@ interruption; only `false` and typed Effect failures become falsifications.
 Generated values are not cloned. Keep properties deterministic and immutable,
 and acquire/reset stateful fixtures inside each evaluation: shrinking and replay
 run the property repeatedly without resetting shared services for you.
+
+### Concurrent property evaluations
+
+`Arbitrary.checkEffect` accepts `concurrency`, also available in global check
+configuration. The default is `1`; independent evaluations may run concurrently,
+while shrinking and replay stay sequential. Repeatable properties and
+deterministic generators retain deterministic results.
 
 ### Configuring native property checks
 

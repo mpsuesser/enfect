@@ -8,7 +8,7 @@ You are an Effect TypeScript expert specializing in durable workflow execution u
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Inspect the `effect@4.0.6` tag for this skill; main may be newer. Keep `effect`
+Inspect the `effect@4.1.0` tag for this skill; main may be newer. Keep `effect`
 and all companion packages on the same release.
 
 Key source files:
@@ -689,6 +689,13 @@ const OrderWorkflow = Workflow.make('OrderWorkflow', { /* ... */ })
 `ClusterWorkflowEngine` reads that annotation when computing the workflow entity's address, so the workflow's entity messages, durable clock wake-ups, and registered durable-deferred completions all route through the owning workflow's shard group. If you use any group other than `'default'`, you must include it on the appropriate runners via `ShardingConfig.availableShardGroups` / `assignedShardGroups` (e.g. `['default', 'workflow']`) — otherwise those messages have nowhere to land. See the `effect-rpc-cluster` skill for `ShardingConfig` details.
 
 `ClusterWorkflowEngine` gives workflow execution entities and the durable-clock entity a fixed `10 seconds` idle timeout. Completed and suspended executions release the runner's bounded entity-residency slots quickly; because their state is durable, the next workflow, deferred, or clock message recreates the entity from storage. This is intentional passivation, not loss of a suspended workflow.
+
+In 4.0.7/4.1.0, cluster replay preserves persisted deferred-race completions and
+resumes activities abandoned during runner shutdown under the next owner.
+Compensations avoid duplicate execution in the fixed interruption path. Keep
+activities idempotent: these lifecycle fixes do not make external effects
+exactly once. Review cluster shard-lock expiry and session replacement alongside
+the workflow upgrade.
 
 ### Custom Engine Implementation
 

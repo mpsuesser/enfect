@@ -8,7 +8,7 @@ You are an Effect TypeScript expert specializing in type-safe SQL database acces
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Inspect the `effect@4.0.6` tag for this skill; main may be newer. SQL APIs remain
+Inspect the `effect@4.1.0` tag for this skill; main may be newer. SQL APIs remain
 `@stability unstable` and may break in minor releases. Keep `effect` and all
 `@effect/sql-*` and platform dependencies on the same release.
 
@@ -27,7 +27,6 @@ import { SqlClient } from 'effect/sql/SqlClient';
 import * as SqlSchema from 'effect/sql/SqlSchema';
 import * as SqlModel from 'effect/sql/SqlModel';
 import * as SqlResolver from 'effect/sql/SqlResolver';
-import * as Migrator from 'effect/sql/Migrator';
 ```
 
 Alternatively, the barrel exports namespace modules:
@@ -447,6 +446,16 @@ yield* repo.delete(userId); // UPDATE users SET deletedAt = CURRENT_TIMESTAMP ..
 
 Resolver versions created by `SqlModel.makeResolvers` honor the same soft-delete filter and delete behavior.
 
+### Array inputs and pool metrics
+
+Array overloads of `sql.insert` and `sql.updateValues` require nonempty rows;
+narrow dynamic inputs with `Array.isReadonlyArrayNonEmpty`. Single-record insert
+remains valid. `sql.in([])` directly after `IN` matches no rows, and after `NOT IN`
+matches all rows; parenthesize the left comparison on PostgreSQL.
+`updateValues` escapes a bare alias itself; custom compiler hooks receive the
+escaped alias. `PgClient.poolStats` / `PgPool.stats` expose idle/in-use/waiting
+connection counts without accessing internals.
+
 ## SqlResolver — Request Batching
 
 `SqlResolver` creates `RequestResolver` instances for batching SQL queries. Use these when you need fine-grained control or custom query shapes beyond the resolvers returned by `SqlModel.makeResolvers`.
@@ -561,6 +570,7 @@ export default Effect.gen(function* () {
 
 ```ts
 import * as Migrator from 'effect/sql/Migrator';
+import * as MigratorFileSystem from 'effect/sql/MigratorFileSystem';
 
 // Create a migrator (optionally with schema dump support)
 const migrate = Migrator.make({
@@ -572,7 +582,7 @@ const migrate = Migrator.make({
 const completed =
 	yield*
 	migrate({
-		loader: Migrator.fromFileSystem('./migrations'),
+		loader: MigratorFileSystem.fromFileSystem('./migrations'),
 		schemaDirectory: './migrations', // optional: where to dump _schema.sql
 		table: 'effect_sql_migrations' // optional: custom table name (default)
 	});
@@ -582,7 +592,7 @@ const completed =
 
 ```ts
 // From filesystem (requires both FileSystem and Path services)
-Migrator.fromFileSystem('./migrations');
+MigratorFileSystem.fromFileSystem('./migrations');
 
 // From Vite/bundler glob import; only .js/.ts/.mjs/.mts keys are loaded
 Migrator.fromGlob(import.meta.glob('./migrations/*.{js,ts,mjs,mts}'));
@@ -612,7 +622,6 @@ than being converted to defects. Handle/report them at the deployment boundary;
 do not treat failed migrations as a successful application startup.
 
 ```ts
-import * as Migrator from 'effect/sql/Migrator';
 
 // MigrationError has a `kind` discriminator:
 // - "BadState"    — migrations table in unexpected state
@@ -821,6 +830,7 @@ Use `@effect/sql-pglite` for embedded PostgreSQL-compatible databases backed by 
 import { Config, Effect } from 'effect';
 import { PgliteClient, PgliteMigrator } from '@effect/sql-pglite';
 import * as Migrator from 'effect/sql/Migrator';
+import * as MigratorFileSystem from 'effect/sql/MigratorFileSystem';
 import { SqlClient } from 'effect/sql/SqlClient';
 
 const PgliteLayer = PgliteClient.layer({
@@ -843,7 +853,7 @@ const program = Effect.gen(function* () {
 });
 
 const runPgliteMigrations = PgliteMigrator.run({
-	loader: Migrator.fromFileSystem('./migrations')
+	loader: MigratorFileSystem.fromFileSystem('./migrations')
 });
 ```
 
@@ -919,6 +929,7 @@ import { Model } from 'effect/schema';
 import { SqlClient } from 'effect/sql/SqlClient';
 import * as SqlModel from 'effect/sql/SqlModel';
 import * as Migrator from 'effect/sql/Migrator';
+import * as MigratorFileSystem from 'effect/sql/MigratorFileSystem';
 import { PgClient } from '@effect/sql-pg';
 
 // 1. Define Model
@@ -944,7 +955,7 @@ const makeUserRepo = Effect.gen(function* () {
 
 // 3. Run Migrations
 const runMigrations = Migrator.make({})({
-	loader: Migrator.fromFileSystem('./migrations')
+	loader: MigratorFileSystem.fromFileSystem('./migrations')
 });
 
 // 4. Wire it up

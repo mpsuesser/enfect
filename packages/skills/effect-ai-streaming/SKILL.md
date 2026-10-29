@@ -5,7 +5,7 @@ description: Master Effect AI streaming response patterns including start/delta/
 
 # Effect AI Streaming
 
-Baseline: `effect@4.0.6`; inspect that tag in the Effect source reference.
+Baseline: `effect@4.1.0`; inspect that tag in the Effect source reference.
 The `effect/ai` APIs remain `@stability unstable` despite their shorter import
 paths and may break in minor releases. Align provider package versions with `effect`.
 
@@ -243,8 +243,7 @@ around `handle` to bound its per-call preliminary-result queue; `context.prelimi
 suspends once the queue fills. Invalid values defect. Consume while the handler
 runs: waiting for producer completion before reading can deadlock. This is not an
 end-to-end memory limit for `LanguageModel`, which transfers results into its own
-buffers. The export is present in exact 4.0.6 despite an upstream `@since 4.1.0`
-annotation. See `effect-ai-tool` for a standalone bounded-consumption example.
+buffers. See `effect-ai-tool` for a standalone bounded-consumption example.
 
 For manual model streaming, disabled resolution defaults to strict encoded
 params. Add `toolCallValidation: 'deferred'` only when the consumer will validate
@@ -407,6 +406,10 @@ Set `preventFallbackOnPartialStream: true` when a provider failure after emitted
 - [ ] Use Channel.acquireUseRelease for resource safety
 - [ ] Handle error parts appropriately
 - [ ] Checkpoint history before streaming
+
+Response codecs require tool parameter decoding/encoding services as well as
+result services, including toolkits with handlers. Track these requirements with
+`Tool.ParametersDecodingServices` when exposing generic toolkit wrappers.
 
 ## Related Skills
 

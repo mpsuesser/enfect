@@ -16,7 +16,7 @@ implementations must supply `codecFor` (see `effect-rpc-client` /
 `effect-rpc-server`). JSON, NDJSON, and JSON-RPC formats use
 their wire representation; the new SchemaBinary transport has its own codecs.
 
-The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read the `effect@4.0.6` tag for this skill; main may be newer. These APIs remain `@stability unstable` and may break in minor releases despite the shorter imports. Keep Effect-family packages on the same release.
+The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read the `effect@4.1.0` tag for this skill; main may be newer. These APIs remain `@stability unstable` and may break in minor releases despite the shorter imports. Keep Effect-family packages on the same release.
 
 Key files:
 

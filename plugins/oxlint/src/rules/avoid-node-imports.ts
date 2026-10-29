@@ -17,7 +17,7 @@ const rule: CreateRule = Rule.banImport(
 	(src) => src.startsWith('node:') && !SPECIFIC_SOURCES.has(src),
 	{
 		message:
-			'Avoid `node:*` imports in domain code. Use `FileSystem`, `Path`, and `Crypto` from `effect`, `ChildProcessSpawner` from `effect/process`, and `HttpClient` from `effect/http` for portable, testable code. (EF-21)'
+			'Avoid `node:*` imports in domain code. Use `FileSystem` and `Path` from `effect`, `SecureRandom` and `Digest` from `effect/crypto`, `ChildProcessSpawner` from `effect/process`, and `HttpClient` from `effect/http` for portable, testable code. (EF-21)'
 	}
 );
 

@@ -7,7 +7,7 @@ You are an Effect TypeScript expert specializing in resource lifecycle managemen
 
 ## Effect Source Reference
 
-Baseline: **effect@4.0.6 stable**. Inspect `git show effect@4.0.6:<path>`;
+Baseline: **effect@4.1.0 stable**. Inspect `git show effect@4.1.0:<path>`;
 main may describe later contracts.
 
 The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read it directly when in doubt — v4 differs substantially from v3 and from most training data.

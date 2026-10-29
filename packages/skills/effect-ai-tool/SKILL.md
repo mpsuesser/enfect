@@ -9,7 +9,7 @@ Use this skill when implementing tools for AI language models using the Effect A
 
 ## Effect AI Documentation Access
 
-For core AI APIs inspect `packages/effect/src/ai/` at `effect@4.0.6` in the
+For core AI APIs inspect `packages/effect/src/ai/` at `effect@4.1.0` in the
 Effect source reference; provider implementations live under `packages/ai/`.
 Keep all Effect-family packages on the same version. These APIs are tagged
 `@stability unstable`, so minor releases may break them despite stable-looking
@@ -619,6 +619,14 @@ declare const performSearch: (query: string) => Effect.Effect<
 - `true`: Your handler processes provider results
 - Handler receives `parameters` from provider
 
+### Model-facing results
+
+`Tool.make` and `Tool.dynamic` accept `toModelOutput`, mapping a successful typed
+result to text/file parts for the model. The application retains its typed
+result; `setSuccess` clears the mapping. Anthropic and OpenAI Responses send
+native content blocks; OpenRouter and OpenAI-compatible providers render text
+with file placeholders through `Prompt.toolModelOutputToText`.
+
 ## Tool Result Flow
 
 ### Understanding ToolCallPart and ToolResultPart
@@ -783,8 +791,7 @@ around `handle` or its calling program to bound that call's preliminary queue.
 `context.preliminary` suspends when it fills; invalid values defect. Consume the
 stream while the producer runs, not after waiting for producer completion, or a
 full queue can deadlock. `LanguageModel` has additional buffers, so this is not
-an end-to-end memory bound. The export exists at exact 4.0.6 despite an upstream
-`@since 4.1.0` annotation.
+an end-to-end memory bound.
 
 <!-- typecheck -->
 ```ts

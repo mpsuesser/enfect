@@ -9,7 +9,7 @@ This skill covers the imperative HTTP server primitives. For the declarative, sc
 
 ## Effect Source Reference
 
-The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read the `effect@4.0.6` tag for this skill; main may be newer. These modules remain `@stability unstable` and may break in minor releases. Keep Effect-family packages on the same release.
+The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read the `effect@4.1.0` tag for this skill; main may be newer. These modules remain `@stability unstable` and may break in minor releases. Keep Effect-family packages on the same release.
 
 Key files:
 
@@ -711,6 +711,13 @@ yield* HttpServer.serveEffect(httpEffect);
 (Inside `HttpRouter.use`, the service offers the same surface imperatively: `router.asHttpEffect()` and `router.addGlobalMiddleware`.)
 
 ---
+
+Bun servers default to `idleTimeout: 0` in this release; configure a timeout when
+the server is exposed directly. Buffered web request reads (`arrayBuffer`, `text`,
+`json`, `urlParamsBody`) enforce `HttpServerRequest.MaxBodySize`, failing oversized
+bodies with `BodyTooLarge` and HTTP 413. Custom request implementations need
+`upgradeWith({ headers })`; `upgrade` delegates to `upgradeWith({})`, and WebSocket
+upgrades reject supplied response headers.
 
 ## 8. WebSocket Upgrades
 

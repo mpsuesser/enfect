@@ -8,13 +8,13 @@ description: Use Effect platform abstractions for cross-platform file I/O, proce
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-This guide targets **Effect 4.0.6**. Inspect the `effect@4.0.6` tag when the checkout is ahead. Keep `effect` and every `@effect/*` package on the same version. APIs explicitly tagged `@stability unstable` can change in minor releases, including third-party Redis/client options.
+This guide targets **Effect 4.1.0**. Inspect the `effect@4.1.0` tag when the checkout is ahead. Keep `effect` and every `@effect/*` package on the same version. APIs explicitly tagged `@stability unstable` can change in minor releases, including third-party Redis/client options.
 
 Reference this for:
 
 - FileSystem source: `packages/effect/src/FileSystem.ts`
 - Path source: `packages/effect/src/Path.ts`
-- Crypto source: `packages/effect/src/Crypto.ts`
+- Crypto sources: `packages/effect/src/crypto/`
 - Socket source: `packages/effect/src/socket/`
 - Platform layers: `packages/platform/node/`, `packages/platform/bun/`, and `packages/platform/browser/`
 - Migration guide: `MIGRATION.md`
@@ -210,7 +210,7 @@ const fileOperations = Effect.gen(function* () {
 
 `fs.watch(directory)` reports direct-child changes by default; pass `{ recursive: true }` for nested subdirectories. `file.seek(offset, 'start' | 'current')` accepts and returns `bigint`; negative resulting positions fail without moving the cursor. File byte counts use `ByteSize.ByteSize`. Use scoped File methods for handle operations.
 
-In 4.0.6, `fs.lstat` inspects the link itself while `stat` follows it. Full custom
+In 4.1.0, `fs.lstat` inspects the link itself while `stat` follows it. Full custom
 FileSystem implementations must supply `lstat`. Stat `dev` is bigint, and
 `ino`/`rdev`/`nlink`/`blocks` are `Option<bigint>`; do not coerce them to number.
 Positional `file.read(buffer, { position })` / `readAlloc(size, { position })`
@@ -325,7 +325,7 @@ const pathOps = Effect.gen(function* () {
 });
 ```
 
-In Effect v4, `Migrator.fromFileSystem` requires both `FileSystem.FileSystem` and `Path.Path` because migration module paths are converted to file URLs before dynamic import. Aggregate Node/Bun service layers satisfy both requirements. When providing services individually on Windows, use the host-aware path layer rather than core `Path.layer`, which has POSIX semantics.
+In Effect v4, `MigratorFileSystem.fromFileSystem` from `effect/sql/MigratorFileSystem` requires both `FileSystem.FileSystem` and `Path.Path` because migration module paths are converted to file URLs before dynamic import. Aggregate Node/Bun service layers satisfy both requirements. When providing services individually on Windows, use the host-aware path layer rather than core `Path.layer`, which has POSIX semantics.
 
 `path.resolveWithin(root, input): Option<string>` rejects rooted inputs and
 lexical escapes, but does not protect against filesystem symlinks. Use
@@ -509,32 +509,35 @@ const structuredLog = Effect.gen(function* () {
 
 ### Crypto - Cryptographic Randomness, UUIDs, and Digests
 
-The `Crypto.Crypto` service provides platform-backed cryptographic random bytes, UUIDv4/v7 generation, and message digests. Prefer it over `globalThis.crypto`, `crypto.randomUUID()`, or ad-hoc randomness when code should stay platform-abstract and testable.
+`SecureRandom.SecureRandom` supplies cryptographic bytes and UUIDs; `Digest.Digest` supplies hashing. Import the families from `effect/crypto` and provide their layers explicitly. Prefer these services over runtime globals when code should stay portable and testable.
 
 <!-- typecheck -->
 ```typescript
-import { Crypto, Effect } from 'effect';
+import { Effect } from 'effect';
+import { Digest, SecureRandom } from 'effect/crypto';
 
 const cryptoProgram = Effect.gen(function* () {
-	const crypto = yield* Crypto.Crypto;
+	const crypto = yield* SecureRandom.SecureRandom;
 
 	const bytes = yield* crypto.randomBytes(32);
-	const uuidV4 = yield* crypto.randomUUIDv4();
-	const uuidV7 = yield* crypto.randomUUIDv7();
-	const digest = yield* crypto.digest('SHA-256', bytes);
+	const uuidV4 = yield* crypto.uuidV4();
+	const uuidV7 = yield* crypto.uuidV7();
+	const hashing = yield* Digest.Digest;
+	const digest = yield* hashing.digest(Digest.sha256, bytes);
 
 	return { bytes, uuidV4, uuidV7, digest };
 });
 ```
 
-`NodeServices.layer` and `BunServices.layer` include `Crypto.Crypto`. Browser applications can provide `BrowserCrypto.layer` from `@effect/platform-browser`.
+Crypto is separate from `NodeServices.layer` and `BunServices.layer`. Provide
+`NodeCrypto.layerSecureRandom` and `NodeCrypto.layerDigest` (or the combined
+`NodeCrypto.layer`); Bun, Deno, and browser adapters expose corresponding layers.
+Core families also expose `layerWebCrypto` using the `WebCrypto` reference.
 
-UUID generators are functions in 4.0.6: `randomUUIDv4()` / `randomUUIDv7()`
-(or `{ format: 'hex' }`) return lowercase hyphenated text;
-`randomUUIDv4({ format: 'bytes' })` / `randomUUIDv7({ format: 'bytes' })` return
-16 bytes. For deterministic tests, `TestCrypto.layer(seed)` from `effect/testing`
-requires a platform Crypto underneath and preserves its digest implementation.
-UUIDv7/ULID tests must also control the clock.
+`uuidV4()` / `uuidV7()` return hyphenated strings; `{ format: 'bytes' }` returns
+16 bytes. These operations have no typed error. UUIDv7/ULID ordering is monotonic
+per service instance, including clock rollback below the maximum timestamp.
+Mock the required methods with `Layer.mock` for deterministic tests.
 
 ### HttpClient - HTTP Requests
 
@@ -669,7 +672,7 @@ Never install retry automatically on a shared client that also sends non-idempot
 
 ### KeyValueStore - Key-Value Storage
 
-The `KeyValueStore` service provides platform-independent key-value storage.
+The `KeyValueStore` service provides platform-independent key-value storage. Custom `make` / `makeStringOnly` implementations must supply `keys`, a snapshot in no guaranteed order. `KeyValueStore.prefix` scopes `keys`, `size`, `isEmpty`, and `clear` to the prefix; returned keys omit it. `clearPrefix` is derived from `keys` / `remove` when absent. Schema stores expose `keys` too.
 
 **Anti-Pattern - Direct localStorage/file-based storage:**
 
@@ -898,7 +901,7 @@ Complete reference table of platform abstractions:
 | **Process Spawning**      | `ChildProcess` + `ChildProcessSpawner` | `child_process`, `Bun.spawn` | `effect/process`     |
 | **Terminal I/O**          | `Terminal.Terminal`                    | `process.stdin/stdout`       | `effect`                      |
 | **Console Logging**       | `Console.log` or `Effect.log`          | `console.log`                | `effect`                      |
-| **Crypto**                | `Crypto.Crypto`                        | `globalThis.crypto`, `crypto.randomUUID()` | `effect`          |
+| **Crypto**                | `SecureRandom.SecureRandom` / `Digest.Digest`                        | `globalThis.crypto`, `crypto.randomUUID()` | `effect/crypto`          |
 | **HTTP Client**           | `HttpClient.HttpClient`                | `fetch`, `axios`             | `effect/http`        |
 | **HTTP Server**           | `HttpServer.HttpServer`                | `http.createServer`          | `effect/http`        |
 | **Sockets**               | `Socket.Socket` / `SocketServer.SocketServer` | raw TCP/WebSocket APIs | `effect/socket`      |
@@ -914,7 +917,7 @@ Socket services live in `effect/socket`. Use `Socket.Socket` for scoped bidirect
 
 To use platform services, provide the appropriate platform layer.
 
-`NodeServices.layer` and `BunServices.layer` provide core process services such as `FileSystem`, `Path`, `ChildProcessSpawner`, `Stdio`/`Terminal`, and `Crypto.Crypto`. They do **not** provide specialized integrations such as HTTP clients/servers, sockets, workers, or Redis; provide those with service-specific platform layers. For HTTP clients, provide an HTTP-specific layer such as `FetchHttpClient.layer`, Node's `NodeHttpClient.{layerFetch, layerUndici, layerNodeHttp}`, `BunHttpClient.layer`, or Browser's `BrowserHttpClient.{layerFetch, layerXMLHttpRequest}`. A named provider adapter should export a raw `layer` that requires `HttpClient.HttpClient`, plus an optional `defaultLayer = layer.pipe(Layer.provide(...transport...))`; this keeps the transport dependency graph explicit while offering runtime convenience. For HTTP servers, use server layers such as `NodeHttpServer.layer(...)`, `BunHttpServer.layer(...)`, or their `layerHttpServices` variants where appropriate.
+`NodeServices.layer` and `BunServices.layer` provide core process services such as `FileSystem`, `Path`, `ChildProcessSpawner`, `Stdio`/`Terminal`. They do **not** provide specialized integrations such as HTTP clients/servers, sockets, workers, or Redis; provide those with service-specific platform layers. For HTTP clients, provide an HTTP-specific layer such as `FetchHttpClient.layer`, Node's `NodeHttpClient.{layerFetch, layerUndici, layerNodeHttp}`, `BunHttpClient.layer`, or Browser's `BrowserHttpClient.{layerFetch, layerXMLHttpRequest}`. A named provider adapter should export a raw `layer` that requires `HttpClient.HttpClient`, plus an optional `defaultLayer = layer.pipe(Layer.provide(...transport...))`; this keeps the transport dependency graph explicit while offering runtime convenience. For HTTP servers, use server layers such as `NodeHttpServer.layer(...)`, `BunHttpServer.layer(...)`, or their `layerHttpServices` variants where appropriate.
 
 **Node.js:**
 
@@ -1077,7 +1080,7 @@ Before completing code that uses platform operations:
 - [ ] Provider/network calls execute outside database transactions
 - [ ] Automatic retries apply only to operations proven idempotent
 - [ ] Adapter `layer` keeps `HttpClient.HttpClient` visible; optional `defaultLayer` owns transport wiring
-- [ ] Cryptographic operations use `Crypto.Crypto` (not direct platform crypto APIs)
+- [ ] Cryptographic operations use `SecureRandom.SecureRandom` / `Digest.Digest` (not direct platform crypto APIs)
 - [ ] Platform services accessed through Effect type system
 - [ ] Appropriate platform/service layer provided (HTTP, sockets, workers, Redis, and other specialized integrations need service-specific layers, not just `NodeServices.layer` / `BunServices.layer`)
 - [ ] No direct imports from `fs`, `path`, `child_process`, `http`, etc.

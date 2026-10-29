@@ -7,8 +7,8 @@ You are an Effect TypeScript expert specializing in fiber lifecycle, interruptio
 
 ## Effect Source Reference
 
-Baseline: **effect@4.0.6 stable**. Resolve source paths with
-`git show effect@4.0.6:<path>` rather than relying on a newer main checkout.
+Baseline: **effect@4.1.0 stable**. Resolve source paths with
+`git show effect@4.1.0:<path>` rather than relying on a newer main checkout.
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
 Browse and read files there directly to look up APIs, types, and implementations.

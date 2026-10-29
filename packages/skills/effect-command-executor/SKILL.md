@@ -5,7 +5,7 @@ description: Spawn and manage child processes using Effect's ChildProcess module
 
 # Child Process Execution with Effect v4
 
-Targets **Effect 4.0.6**, checked against the `effect@4.0.6` source tag. Keep platform packages on the same version. The process API is marked `@stability unstable`, so check contracts again before a minor-version upgrade.
+Targets **Effect 4.1.0**, checked against the `effect@4.1.0` source tag. Keep platform packages on the same version. The process API is marked `@stability unstable`, so check contracts again before a minor-version upgrade.
 
 ## Overview
 
@@ -49,13 +49,25 @@ import { NodeServices } from '@effect/platform-node';
 
 ## Creating Commands
 
+### Command-line parsing in 4.1.0
+
+`ChildProcess.make` templates preserve quoted words and reject shell syntax such
+as pipes, variable expansion, and globs with `CommandLineError`. Quote literal
+characters or interpolate them as arguments. With `shell`, pass a complete
+script built with `CommandLine.join` from `effect/process`; templates cannot
+contain interpolations and extra arguments fail with `BadArgument`.
+`CommandLine.TemplateExpression` / `TemplateExpressionItem` replace the removed
+ChildProcess types. Arguments and environment values support `Redacted` strings.
+Output sinks run only while their corresponding handle stream is consumed;
+the stream emits the sink's results. Failed input streams fail the exit code.
+
 ### Template Literal Form
 
 <!-- typecheck -->
 ```typescript
 import { ChildProcess } from 'effect/process';
 
-// Simple command — parsed by whitespace
+// Simple command — parsed into words, preserving quoting
 const cmd = ChildProcess.make`echo hello world`;
 
 // With interpolation — expressions become separate arguments
@@ -280,7 +292,7 @@ const program = Effect.gen(function* () {
 });
 ```
 
-`string`, `lines`, and stream helpers collect output; they do **not** reject a nonzero exit code. Use a scoped handle when success requires both captured output and a checked status. When using `exitCode` alone, inherit or ignore stdout/stderr so an unread pipe cannot fill and stall a noisy process. Output helpers default to stdout; pass `{ includeStderr: true }` to consume combined output, or configure stderr as `inherit`/`ignore` when only stdout is needed.
+`string`, `lines`, and stream helpers collect output; they do **not** reject a nonzero exit code. Use a scoped handle when success requires both captured output and a checked status. `spawner.exitCode` drains and discards stdout/stderr. Output helpers default to stdout and drain unused stderr; pass `{ includeStderr: true }` to include it. Failures reading output while a helper runs fail that helper. Raw `handle.exitCode` still needs explicit output consumption.
 
 ### Stream Output (Long-Running Processes)
 
@@ -406,7 +418,7 @@ const program = Effect.gen(function* () {
 import { NodeServices } from '@effect/platform-node';
 import { Effect } from 'effect';
 
-// NodeServices.layer provides: ChildProcessSpawner, Crypto, FileSystem, Path, Stdio, Terminal
+// NodeServices.layer provides: ChildProcessSpawner, FileSystem, Path, Stdio, Terminal
 const program = Effect.gen(function* () {
 	// ...
 }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));

@@ -862,7 +862,7 @@ const program = Effect.fail(42).pipe(
 
 In v4, `Cause<E>` is a flat wrapper around an array of reasons — **not** a recursive tree.
 
-Runtime JSON/inspection uses the `reasons` property in 4.0.6 (not `failures`).
+Runtime JSON/inspection uses the `reasons` property in 4.1.0 (not `failures`).
 This display correction does not change schema-backed cause encodings.
 
 ```typescript
@@ -1005,12 +1005,17 @@ const handleError = (error: AppError): Effect.Effect<string> =>
 const program = dangerousOperation().pipe(Effect.catch(handleError));
 ```
 
+`Effect.ignore` and `ignoreCause` (and Stream/Channel variants) accept
+`{ log: 'Unhandled' }` to resolve `References.UnhandledLogLevel` when failure
+occurs. An undefined reference suppresses logging; each combinator retains its
+existing typed-error versus whole-cause semantics.
+
 ## Error Transformation
 
-### Mixed causes in effect@4.0.6
+### Mixed causes in effect@4.1.0
 
-Inspect exact release source with `git show effect@4.0.6:packages/effect/src/Effect.ts`
-and `internal/effect.ts`; the 4.0.6 rule supersedes earlier patch-release retry behavior.
+Inspect exact release source with `git show effect@4.1.0:packages/effect/src/Effect.ts`
+and `internal/effect.ts`; the 4.1.0 rule supersedes earlier patch-release retry behavior.
 
 Typed recovery (`catch`, tag/reason/filter catches, fallbacks, `match`, `result`,
 `option`, `ignore`, and typed retry/repeat handling) gives defects precedence:

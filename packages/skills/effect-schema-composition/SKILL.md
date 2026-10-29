@@ -9,9 +9,9 @@ Expert guidance for composing, transforming, and validating data with Effect Sch
 
 ## Effect Source Reference
 
-Baseline: **Effect 4.0.6**. The source checkout is at
+Baseline: **Effect 4.1.0**. The source checkout is at
 `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Read `git show effect@4.0.6:<path>`; main may be newer. Check the consuming
+Read `git show effect@4.1.0:<path>`; main may be newer. Check the consuming
 project's installed version before using these contracts.
 
 Reference this for:
@@ -471,11 +471,17 @@ import { Schema, SchemaTransformation } from 'effect';
 
 // Built-in duration parsing, including "Infinity" and "-Infinity"
 Schema.DurationFromString; // "1 second" → Duration.Duration
+Schema.DurationFromIsoString; // "PT1S" → Duration.Duration
 
 const DurationFromString = Schema.String.pipe(
 	Schema.decodeTo(Schema.Duration, SchemaTransformation.durationFromString)
 );
 ```
+
+`Duration.fromIso` and `Duration.formatIso` return `Option` values for exact
+ISO 8601 durations: weeks, days, hours, minutes, and seconds. Years and months
+are rejected because their length varies. Use `Schema.DurationFromIsoString`
+at a decoding boundary; `Duration.toMicros` converts a duration to microseconds.
 
 ### Split (manual implementation)
 

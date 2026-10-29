@@ -22,7 +22,7 @@ the generator also accepts OpenAPI 3.2's native `query` operation.
 Generated multipart binary fields use `File | Blob` and dedicated `*Multipart`
 component exports. Keep generated imports aligned with the chosen transport.
 
-The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Inspect the `effect@4.0.6` tag for this skill; main may be newer. These APIs remain `@stability unstable` and may break in minor releases despite their shorter import paths. Keep `effect` and companion packages on the same release.
+The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Inspect the `effect@4.1.0` tag for this skill; main may be newer. These APIs remain `@stability unstable` and may break in minor releases despite their shorter import paths. Keep `effect` and companion packages on the same release.
 
 Key reference files:
 
@@ -469,17 +469,55 @@ otherwise enforcement happens while reading. A response-stream failure aborts
 the body rather than producing a clean end or a new HTTP error response. NDJSON
 has no typed mid-stream error schema; use response-only `StreamSse` for that.
 
+Streaming schemas can declare multiple content types. For response-only client
+mode, `HttpApiClient.decodeResponse` decodes a returned response using the
+endpoint contract when decoding is needed later.
+
 ### Raw HTTP/1.1 Upgrade Success
 
 `success: HttpApiSchema.Upgrade({ protocol: 'tcp' })` declares a 101 response.
-It must be the endpoint's only success schema, with no payload; `websocket` is
-rejected (use `HttpServerRequest.upgrade` / `Socket.makeWebSocket` instead).
-The handler receives `socket`; acquiring its reader sends the handshake, so
-declared failures can still render before acquisition. A request not asking for
-the protocol gets 426. Generated clients send upgrade headers and return
-`{ headers, socket }`; OpenAPI documents 101. Use Node's raw HTTP transport:
+It can coexist with ordinary success schemas when a server declines the upgrade.
+Buffered payloads are allowed; streaming payloads and `websocket` are rejected
+(use `HttpServerRequest.upgrade` / `Socket.makeWebSocket` for WebSockets).
+Declare typed 101 headers with `Upgrade({ protocol, headers })`. The handler
+receives `upgrade()` / `upgrade({ headers })`, returning the socket. A request
+not asking for the protocol gets 426 before payload decoding. Generated clients
+send upgrade headers and return a branded `{ headers, socket }`; narrow mixed
+results with `HttpApiClient.isUpgraded`. Client mocks must include
+`[HttpApiClient.UpgradedTypeId]: HttpApiClient.UpgradedTypeId`. OpenAPI documents 101.
+Custom `HttpServerRequest` services need `upgradeWith({ headers })`; WebSocket
+upgrades reject supplied headers. Node 25 and older support Content-Length raw
+upgrade payloads, while chunked ones receive 411. Use Node's raw HTTP transport:
 Fetch/XHR reject these requests before sending, and Bun/Deno servers only
 support WebSocket upgrades.
+
+### RFC 9457 Problem Details
+
+Problem Details is opt-in; existing error responses retain their defaults.
+`ProblemDetails` from `effect/http` supplies the lenient codec, response
+constructor, and `application/problem+json` media type. Use
+`HttpApiSchema.asProblem` for built-in errors. Apply
+`HttpApiMiddleware.ProblemDetails` and provide `layerProblemDetails()` to render
+request decoding failures as 400 problems and response encoding failures as 500
+problems; `includeDetails` adds per-field request errors.
+
+<!-- typecheck -->
+```ts
+import { Effect, Schema } from 'effect';
+import { HttpApiEndpoint, HttpApiError } from 'effect/http-api';
+
+class OutOfCredit extends HttpApiError.Problem<OutOfCredit>()('OutOfCredit', {
+  type: 'https://example.com/problems/out-of-credit',
+  status: 403,
+  title: 'Insufficient credit'
+}, { balance: Schema.Number }) {}
+
+const buy = HttpApiEndpoint.post('buy', '/buy', { error: OutOfCredit });
+const failing = Effect.fail(new OutOfCredit({ balance: 30 }));
+```
+
+Problem classes discriminate on wire `type`, while `Effect.catchTag` still uses
+the class tag. Extension fields are validated; unknown extensions are dropped.
 
 ## Groups
 

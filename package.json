@@ -7,13 +7,13 @@
       "plugins/*"
     ],
     "catalog": {
-      "@effect/ai-openrouter": "4.0.6",
-      "@effect/ai-typesafe": "4.0.6",
-      "@effect/platform-bun": "4.0.6",
-      "@effect/platform-node": "4.0.6",
-      "@effect/platform-node-shared": "4.0.6",
-      "@effect/vitest": "4.0.6",
-      "effect": "4.0.6"
+      "@effect/ai-openrouter": "4.1.0",
+      "@effect/ai-typesafe": "4.1.0",
+      "@effect/platform-bun": "4.1.0",
+      "@effect/platform-node": "4.1.0",
+      "@effect/platform-node-shared": "4.1.0",
+      "@effect/vitest": "4.1.0",
+      "effect": "4.1.0"
     }
   },
   "type": "module",

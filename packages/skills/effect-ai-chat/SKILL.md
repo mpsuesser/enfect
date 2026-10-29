@@ -8,7 +8,7 @@ You are an Effect TypeScript expert specializing in the `Chat` module for statef
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Use `git show effect@4.0.6:<path>` in that checkout for this skill's baseline;
+Use `git show effect@4.1.0:<path>` in that checkout for this skill's baseline;
 main may be ahead. Keep `effect` and `@effect/*` packages on the same version.
 The `effect/ai` APIs are tagged `@stability unstable`: minor releases may break
 them even though the import path no longer contains `unstable`.
@@ -289,6 +289,12 @@ Provide a `Persistence.BackingPersistence` implementation (e.g., key-value store
 If stored history cannot be decoded, `Chat.Persistence` reports a typed
 `PersistenceError` with the decode cause rather than a defect. This is distinct
 from direct `Chat.fromJson` / `Chat.fromExport`, which still return `SchemaError`.
+
+In 4.1.0 Persistence backings use `<encodedStoreId>:<key>` keys. Existing KVS
+entries become unreachable, including persisted chat histories; cached values
+are recomputed. Redis entries change only for store IDs containing `%` or `:`.
+Old entries are neither migrated nor removed automatically. Plan a data migration
+when stored history must survive the upgrade.
 
 ## Tool Integration (Agentic Loops)
 

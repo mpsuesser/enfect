@@ -8,7 +8,7 @@ You are an Effect TypeScript expert specializing in observability — structured
 ## Effect Source Reference
 
 The Effect v4 source is available at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`.
-Inspect `git show effect@4.0.6:<path>` there for this baseline; main may be ahead.
+Inspect `git show effect@4.1.0:<path>` there for this baseline; main may be ahead.
 Keep `effect` and `@effect/*` packages on the same version. The OTLP modules and
 `@effect/opentelemetry` APIs are tagged `@stability unstable` and may break in
 minor releases; the shorter `effect/observability` import path is not a stability guarantee.
@@ -290,7 +290,7 @@ const MyLayer = Layer.effectDiscard(setupEffect).pipe(
 );
 ```
 
-### HTTP and RPC trace conventions in 4.0.6
+### HTTP and RPC trace conventions in 4.1.0
 
 HTTP client/server spans default to the method alone (`GET`, not `http.client
 GET` / `http.server GET`). RPC spans likewise default to the method; explicit
@@ -433,7 +433,7 @@ const snapshots = yield* Metric.snapshot;
 
 ### Series ownership and snapshot-backed gauges
 
-4.0.6 adds unstable `Metric.remove`, `removeUnsafe`, and `registerUnsafe` APIs.
+The unstable `Metric.remove`, `removeUnsafe`, and `registerUnsafe` APIs support explicit metric lifecycle control.
 Removal targets the metric plus attributes merged with
 `Metric.CurrentMetricAttributes`, leaving other series intact. A later update
 recreates the removed series from its initial state. Exporters discard removed
@@ -523,7 +523,7 @@ or invalid values fall back to 5 seconds.
 
 ### Exported fields and metric shapes
 
-Update dashboards/queries when moving from 4.0.0 to 4.0.6:
+Update dashboards/queries when moving from 4.0.0 to 4.1.0:
 
 - OTLP logs use `effect.fiberId`, numeric elapsed-millisecond
   `effect.log_span.<label>`, and `exception.type`, `exception.message`,
@@ -616,9 +616,8 @@ timeout; it waits only for exports it starts, not exports already in flight.
 Exporters in their temporary-disable window are skipped, so completion is not a
 delivery acknowledgement. Successful delta-metric flushes advance their aggregation window.
 
-The combined `Otlp.layer*` signatures expose `never` as their output service.
-To access `Flusher` with the combined layer, merge `OtlpExporter.layerFlusher`
-explicitly; memoization shares that registry with the signal layers:
+The combined `Otlp.layer*` signatures expose the shared `OtlpExporter.Flusher`.
+Use it directly for manual drains:
 
 <!-- typecheck -->
 ```ts
@@ -626,16 +625,23 @@ import { Effect, Layer } from 'effect';
 import { FetchHttpClient } from 'effect/http';
 import { Otlp, OtlpExporter } from 'effect/observability';
 
-const telemetry = Layer.mergeAll(
-	Otlp.layerJson({ baseUrl: 'http://localhost:4318' }),
-	OtlpExporter.layerFlusher
-).pipe(Layer.provide(FetchHttpClient.layer));
+const telemetry = Otlp.layerJson({ baseUrl: 'http://localhost:4318' }).pipe(
+  Layer.provide(FetchHttpClient.layer)
+);
 
 const flush = Effect.gen(function* () {
 	const flusher = yield* OtlpExporter.Flusher;
 	return yield* flusher.flush.pipe(Effect.timeoutOption('5 seconds'));
 }).pipe(Effect.provide(telemetry));
 ```
+
+`OtlpResource.fromConfig` trims `OTEL_RESOURCE_ATTRIBUTES` keys/values and retains
+empty values as `""`. Unstable `OtlpProxy` can forward browser telemetry through
+server routes while keeping vendor credentials on the server; review its body
+limits and authentication boundary. Import Node/Web SDK adapters from
+`@effect/opentelemetry/NodeSdk` / `WebSdk`, rather than the removed root exports.
+`Pool.stats`, `PgPool.stats`, and `PgClient.poolStats` expose idle/in-use/waiting
+snapshots for metrics without accessing pool internals.
 
 ### Exporter lifecycle
 

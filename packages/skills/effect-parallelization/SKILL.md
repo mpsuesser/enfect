@@ -7,8 +7,8 @@ You are an Effect TypeScript expert specializing in declarative concurrency — 
 
 ## Effect Source Reference
 
-Baseline: **effect@4.0.6 stable**. Inspect paths with
-`git show effect@4.0.6:<path>`; newer main is not the release contract.
+Baseline: **effect@4.1.0 stable**. Inspect paths with
+`git show effect@4.1.0:<path>`; newer main is not the release contract.
 
 The Effect v4 source is at `~/.local/share/opencode/repos/github.com/Effect-TS/effect@main/`. Read it directly when in doubt — Effect v4 differs substantially from v3 and from most training data.
 
@@ -392,6 +392,13 @@ sem.release(2);                    // Effect<number> — manual release; returns
 sem.releaseAll;                    // Effect<number> — return every taken permit
 sem.resize(8);                     // Effect<void> — change total permits in place
 ```
+
+### Permits held for a scope
+
+`Semaphore.takeScoped(semaphore, permits)` acquires permits until scope closure.
+Waiting is interruptible unless the caller is uninterruptible, and acquired
+permits are always returned at closure. Use it when ownership outlives one effect;
+use `withPermits` for a lexical operation.
 
 ### Module-level duals
 

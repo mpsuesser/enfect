@@ -7,7 +7,7 @@ description: Master the Effect AI LanguageModel service for text generation, str
 
 Pattern guide for working with the LanguageModel service from Effect AI for type-safe LLM interactions with Effect's functional patterns.
 
-Baseline: `effect@4.0.6`. Inspect that tag in the Effect source reference, not
+Baseline: `effect@4.1.0`. Inspect that tag in the Effect source reference, not
 unreleased main. Keep Effect-family packages on the same version. `effect/ai`
 APIs carry `@stability unstable` and may change incompatibly in minor releases.
 
@@ -348,12 +348,21 @@ toolChoice: {
 }
 ```
 
+`AiError.NetworkError` records `method` and `url` instead of `request` and may
+carry an unredacted `HttpClientError` in `cause`; inspect it deliberately when
+logging. Providers use `NetworkError.fromHttpClientError`; `fromRequestError`
+remains available. `AiError.HttpRequestDetails`, `Response.HttpRequestDetails`,
+and request fields in HTTP context/response metadata were removed.
+
+OpenAI maximum-output exhaustion and Anthropic context-window exhaustion report
+`finishReason: 'length'`. A truncated OpenAI response with a tool call does not
+execute the handler; handle truncation before continuing the tool loop.
+
 ## Error Handling
 
 Distinguish nonretryable `InvalidResponseError` (malformed provider envelopes or
 SSE schema failures, with optional HTTP context) from retryable
-`InvalidOutputError` (decoded model output fails validation). The former exists
-at 4.0.6 despite its upstream `@since 4.1.0` annotation. Use reason-specific
+`InvalidOutputError` (decoded model output fails validation). Use reason-specific
 recovery such as `Effect.catchReason('AiError', 'RateLimitError', ...)`; a broad
 fallback must not silently hide authentication, quota, or malformed-wire failures.
 

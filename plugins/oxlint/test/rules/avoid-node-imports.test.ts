@@ -107,12 +107,12 @@ describe('avoid-node-imports', () => {
 	});
 
 	// ── Does not flag non-node: imports ──
-	it('allows effect/Crypto', () => {
+	it('allows effect/crypto/SecureRandom', () => {
 		expect(
 			Testing.runRule(
 				rule,
 				'ImportDeclaration',
-				Testing.importDecl('effect/Crypto')
+				Testing.importDecl('effect/crypto/SecureRandom')
 			)
 		).toHaveLength(0);
 	});

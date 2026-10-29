@@ -7,8 +7,8 @@ description: Decide between Context.Service witness and capability patterns for 
 
 Choose between witness (existence) and capability (behavior) patterns for Context.Service definitions.
 
-Baseline: **effect@4.0.6 stable**. Inspect `Context.ts`, `Layer.ts`, and
-`Effect.ts` with `git show effect@4.0.6:packages/effect/src/<Module>.ts` in the
+Baseline: **effect@4.1.0 stable**. Inspect `Context.ts`, `Layer.ts`, and
+`Effect.ts` with `git show effect@4.1.0:packages/effect/src/<Module>.ts` in the
 Effect reference repository; a newer main checkout is not the release contract.
 
 ## Coupling: Hard vs Soft
