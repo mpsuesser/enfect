@@ -1,61 +1,54 @@
 name: Publish to npm
 
 on:
-  push:
-    branches: [main]
-  release:
-    types: [published]
+    push:
+        branches: [main]
+    workflow_dispatch:
 
 concurrency:
-  group: npm-publish
-  cancel-in-progress: false
+    group: npm-publish
+    cancel-in-progress: false
 
 permissions:
-  contents: read
-  id-token: write
+    contents: read
+    id-token: write
 
 jobs:
-  publish:
-    name: Verify and publish
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: "1.4.4"
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: "24"
-          registry-url: "https://registry.npmjs.org"
-          package-manager-cache: false
-      - run: bun install --frozen-lockfile
-      - name: Require the release tag to match package.json
-        if: github.event_name == 'release'
-        run: |
-          PACKAGE_VERSION=$(node --print "require('./package.json').version")
-          test "$GITHUB_REF_NAME" = "v$PACKAGE_VERSION"
-      - run: bun run check
-      - run: bun run test
-      - name: Check whether this version is already published
-        id: registry
-        run: |
-          PACKAGE_NAME=$(node --print "require('./package.json').name")
-          PACKAGE_VERSION=$(node --print "require('./package.json').version")
-          STATUS=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
-            "https://registry.npmjs.org/$PACKAGE_NAME/$PACKAGE_VERSION")
-          case "$STATUS" in
-            200)
-              echo "publish=false" >> "$GITHUB_OUTPUT"
-              echo "$PACKAGE_NAME@$PACKAGE_VERSION is already published"
-              ;;
-            404)
-              echo "publish=true" >> "$GITHUB_OUTPUT"
-              ;;
-            *)
-              echo "Registry lookup failed with HTTP $STATUS" >&2
-              exit 1
-              ;;
-          esac
-      - name: Publish package
-        if: steps.registry.outputs.publish == 'true'
-        run: npm publish --provenance
+    publish:
+        name: Verify and publish
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+            - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+              with:
+                  bun-version: '1.4.4'
+            - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+              with:
+                  node-version: '24'
+                  registry-url: 'https://registry.npmjs.org'
+                  package-manager-cache: false
+            # npm trusted publishing needs npm 11.5.1 or newer.
+            - run: npm install --global npm@latest
+            - run: bun install --frozen-lockfile
+            - run: bun run build
+            - run: bun run check
+            - run: bun run test
+            # bun pm pack resolves catalog: and workspace: versions; npm publishes the tarball.
+            - name: Publish unpublished package versions
+              run: |
+                  mkdir -p "$RUNNER_TEMP/packs"
+                  for directory in packages/claude packages/opencode packages/oxlint; do
+                    NAME=$(node --print "require('./$directory/package.json').name")
+                    VERSION=$(node --print "require('./$directory/package.json').version")
+                    STATUS=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+                      "https://registry.npmjs.org/${NAME/\//%2F}/$VERSION")
+                    case "$STATUS" in
+                      200) echo "$NAME@$VERSION is already published" ;;
+                      404)
+                        (cd "$directory" && bun pm pack --destination "$RUNNER_TEMP/packs")
+                        npm publish "$RUNNER_TEMP/packs/$(echo "${NAME#@}" | tr / -)-$VERSION.tgz" \
+                          --provenance --access public
+                        ;;
+                      *) echo "Registry lookup for $NAME failed with HTTP $STATUS" >&2; exit 1 ;;
+                    esac
+                  done

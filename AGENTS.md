@@ -1,35 +1,28 @@
-# opencode-effect-enforcer
+# Enfect
 
-This is a single-package Bun repository that serves the same Effect guidance,
-skills, and patterns to two hosts. It is an OpenCode V2 plugin (the npm package
-export) and a Claude Code plugin and marketplace (the repository root). It ports
-the source context and pattern policy from `pi-effect-harness` without Pi's
-Effect Mode or persistence architecture.
+A Bun workspace that publishes Effect v4 plugins for three hosts from shared
+sources. See `CONTRIBUTING.md` for the layout and commands.
 
-## Source Of Truth
+## Source of truth
 
-- `skills/`: bundled OpenCode skills
-- `guidance/`: privileged model guidance
-- `patterns/`: pattern definitions
-- `test/<pattern>.test.ts`: one-to-one detector cases
-- `src/core/`: host-independent catalog loading, matching, projection, and feedback
-- `src/opencode/index.ts`: OpenCode V2 composition root (the package export)
-- `src/opencode/enforcer.ts`: OpenCode tool-hook adapter
-- `src/claude/hook.ts`: Claude Code hook entrypoint for `session-start <part>` and `post-tool-use`
-- `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`: Claude Code manifests
-- `hooks/hooks.json`: Claude Code hook registrations, with one SessionStart entry per guidance part
+- `packages/core/guidance/`, `skills/`, `patterns/`, `docs/`: the only copies.
+  Never edit the copies that builds place in `packages/claude` or
+  `packages/opencode`.
+- `packages/core/src/`: host-independent catalog loading, matching, write
+  projection, and feedback. Host-specific behavior belongs in an adapter.
+- `packages/claude/src/hook.ts`: Claude Code hook entrypoint, bundled to
+  `dist/hook.mjs`. `hooks/hooks.json` declares one SessionStart and one
+  SubagentStart entry per guidance part.
+- `packages/opencode/src/index.ts`: OpenCode V2 composition root, bundled to
+  `dist/index.js`.
+- `packages/oxlint/src/`: oxlint rules, one file per rule.
 
-Host-specific behavior belongs in an adapter. Never fork guidance, skills, or
-patterns per host.
+Keep `@ast-grep/napi` out of the plugin bundles, and load it only through
+`packages/core/src/ast-grep.ts`. Installed Claude Code plugins have no
+`node_modules`, so the hook installs it into the plugin data directory.
 
-Do not introduce another workspace package. The one generated file is
-`dist/claude-hook.mjs`. Claude Code runs it with Node from installed plugin copies,
-which have no `node_modules`. Run `bun run build` after changing anything under
-`src/` and commit the result. The tests fail when the bundle is stale. Keep
-`@ast-grep/napi` out of the bundle, and load it only through
-`src/core/ast-grep.ts`.
-
-Keep the versions in `package.json` and `.claude-plugin/plugin.json` equal.
+Keep the versions in the three published `package.json` files and
+`packages/claude/.claude-plugin/plugin.json` equal.
 
 ## Verification
 
@@ -37,20 +30,10 @@ Keep the versions in `package.json` and `.claude-plugin/plugin.json` equal.
 bun run build
 bun run check
 bun run test
+claude plugin validate packages/claude --strict
 claude plugin validate . --strict
 ```
 
-Run both before considering a change complete. Pattern changes must preserve the
-bidirectional inventory enforced by `test/all-patterns-covered.test.ts`.
-
-Every bundled skill, pattern, and guidance source must remain linked from
-`README.md`; the tests enforce this catalog coverage.
-
-## Releases
-
-Pushes to `main` verify and publish unpublished package versions to npm with
-provenance. Bump `package.json` before pushing a release; already-published
-versions are skipped. Publishing is serialized across push and release events.
-
-GitHub releases also trigger this workflow. The release tag must exactly match
-the package version, such as `v0.3.0` for `"version": "0.3.0"`.
+Pattern changes must preserve the inventory enforced by
+`packages/core/test/all-patterns-covered.test.ts`. Every skill, pattern, and
+guidance document must stay linked from `packages/core/README.md`.

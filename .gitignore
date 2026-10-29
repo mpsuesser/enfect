@@ -1,5 +1,18 @@
 node_modules/
+dist/
 coverage/
 *.tgz
 *.tsbuildinfo
 .DS_Store
+
+# Copied from packages/core by each plugin's build
+packages/claude/docs/
+packages/claude/guidance/
+packages/claude/patterns/
+packages/claude/skills/
+packages/claude/LICENSE
+packages/opencode/docs/
+packages/opencode/guidance/
+packages/opencode/patterns/
+packages/opencode/skills/
+packages/opencode/LICENSE

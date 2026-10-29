@@ -1,34 +1,34 @@
-# oxlint-plugin-effect
+# @enfect/oxlint
 
-[![npm](https://img.shields.io/npm/v/@mpsuesser/oxlint-plugin-effect)](https://www.npmjs.com/package/@mpsuesser/oxlint-plugin-effect)
-[![JSR](https://jsr.io/badges/@mpsuesser/oxlint-plugin-effect)](https://jsr.io/@mpsuesser/oxlint-plugin-effect)
+[![npm](https://img.shields.io/npm/v/@enfect/oxlint)](https://www.npmjs.com/package/@enfect/oxlint)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
 An opinionated [oxlint](https://oxc.rs/docs/guide/usage/linter) plugin for [Effect v4](https://effect.website) that drives every module toward Effect services, typed error channels, and functional composition. It flags imperative patterns, raw Node APIs, untyped errors, and other non-idiomatic shapes at the lint layer so they never make it into review.
 
 The plugin ships **74 rules** namespaced under `effect/`, including all 16 rules from [`dmmulroy/anti-slop`](https://github.com/dmmulroy/anti-slop). Rules are implemented with the [`effect-oxlint`](https://github.com/mpsuesser/effect-oxlint) SDK and run as standard oxlint custom rules.
 
-The runtime and recommendations target **Effect 4.0.0 (stable)**. Area imports use
+The runtime and recommendations target **Effect 4.0.6 (stable)**. Area imports use
 `effect/http`, `effect/http-api`, `effect/process`, etc.; the old `unstable` paths
 are removed. APIs marked `@stability unstable` can still change in minor releases.
 Keep directly used Effect-family packages on the same release version.
 
-Development uses `@effect/vitest@4.0.0` with Vitest 5 and Vite+ 1.0. The published
-plugin is checked with oxlint 1.85; test and build tooling is not a consumer dependency.
+The published plugin is checked with oxlint 1.85. It is part of
+[Enfect](https://github.com/mpsuesser/enfect), which also publishes Effect
+plugins for Claude Code and OpenCode.
 
 ## Installation
 
 ```sh
-npm install @mpsuesser/oxlint-plugin-effect
+npm install --save-dev oxlint @enfect/oxlint
 # or
-bun add @mpsuesser/oxlint-plugin-effect
+bun add -D oxlint @enfect/oxlint
 ```
 
 Use the generated recommended config from `oxlint.config.ts`:
 
 ```ts
 import { defineConfig } from 'oxlint';
-import effect from '@mpsuesser/oxlint-plugin-effect';
+import effect from '@enfect/oxlint';
 
 export default defineConfig({
 	extends: [effect.configs.recommended]
@@ -41,7 +41,7 @@ To override an individual rule, add a `rules` entry after the `extends` block:
 
 ```ts
 import { defineConfig } from 'oxlint';
-import effect from '@mpsuesser/oxlint-plugin-effect';
+import effect from '@enfect/oxlint';
 
 export default defineConfig({
 	extends: [effect.configs.recommended],
@@ -56,7 +56,7 @@ If you use `.oxlintrc.json`, oxlint cannot import a package config object. Confi
 
 ```jsonc
 {
-	"jsPlugins": ["@mpsuesser/oxlint-plugin-effect"],
+	"jsPlugins": ["@enfect/oxlint"],
 	"rules": {
 		"effect/avoid-direct-json": "error"
 	}
@@ -102,7 +102,7 @@ limits its value-flow analysis to immutable bindings within a function boundary.
 
 Remove the old `anti-slop` and `anti-slop-effect` registrations from `jsPlugins`.
 Replace both rule-name prefixes with `effect/`, keeping existing severity and
-option values. Register `@mpsuesser/oxlint-plugin-effect` once, or use the
+option values. Register `@enfect/oxlint` once, or use the
 recommended config above to enable the entire personal ruleset. There is no
 runtime dependency on anti-slop and no separate Effect entrypoint to register.
 
@@ -110,7 +110,7 @@ For example, an existing customized configuration becomes:
 
 ```ts
 import { defineConfig } from 'oxlint';
-import effect from '@mpsuesser/oxlint-plugin-effect';
+import effect from '@enfect/oxlint';
 
 export default defineConfig({
 	extends: [effect.configs.recommended],

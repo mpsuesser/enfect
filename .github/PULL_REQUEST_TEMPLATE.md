@@ -10,6 +10,5 @@ Brief description of what this PR does and why.
 
 - [ ] `bun run check` passes
 - [ ] `bun run test` passes
-- [ ] `bun run typecheck` passes
-- [ ] New/changed rules have tests
+- [ ] New or changed rules and patterns have tests
 - [ ] CHANGELOG updated if applicable

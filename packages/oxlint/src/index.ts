@@ -179,7 +179,7 @@ const rules: Record<string, CreateRule> = {
  */
 const plugin: Plugin.DefinedPlugin<Record<string, CreateRule>> = Plugin.define({
 	name: 'effect',
-	specifier: '@mpsuesser/oxlint-plugin-effect',
+	specifier: '@enfect/oxlint',
 	rules
 });
 

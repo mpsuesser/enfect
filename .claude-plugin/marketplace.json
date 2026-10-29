@@ -1,13 +1,13 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "effect-enforcer",
-  "description": "Effect v4 skills, guidance, and pattern enforcement",
+  "name": "enfect",
+  "description": "Effect v4 guidance, skills, and pattern checks for coding agents",
   "owner": { "name": "Marc Suesser" },
   "plugins": [
     {
-      "name": "effect-enforcer",
-      "source": "./",
-      "description": "Effect v4 skills, guidance, and post-write pattern enforcement for Claude Code",
+      "name": "enfect",
+      "source": { "source": "npm", "package": "@enfect/claude" },
+      "description": "Effect v4 guidance, skills, and post-write pattern checks for Claude Code",
       "category": "development"
     }
   ]

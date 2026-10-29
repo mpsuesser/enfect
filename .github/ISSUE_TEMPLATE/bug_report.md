@@ -23,9 +23,8 @@ What actually happened. Include error messages or diagnostics output if applicab
 
 ## Environment
 
-- oxlint-plugin-effect version:
+- Package and version (`@enfect/claude`, `@enfect/opencode`, or `@enfect/oxlint`):
+- Host and version (Claude Code, OpenCode, or oxlint):
 - effect version:
-- effect-oxlint version:
-- @oxlint/plugins version:
 - Bun version:
 - OS:

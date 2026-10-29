@@ -1,12 +1,12 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
-  "name": "effect-enforcer",
-  "displayName": "Effect Enforcer",
-  "version": "0.7.0",
-  "description": "Effect v4 skills, guidance, and post-write pattern enforcement for Claude Code",
+  "name": "enfect",
+  "displayName": "Enfect",
+  "version": "0.8.0",
+  "description": "Effect v4 guidance, skills, and post-write pattern checks for Claude Code",
   "author": { "name": "Marc Suesser" },
-  "homepage": "https://github.com/mpsuesser/opencode-effect-enforcer#readme",
-  "repository": "https://github.com/mpsuesser/opencode-effect-enforcer",
+  "homepage": "https://github.com/mpsuesser/enfect/tree/main/packages/claude#readme",
+  "repository": "https://github.com/mpsuesser/enfect",
   "license": "MIT",
   "keywords": ["effect", "effect-ts", "typescript"]
 }

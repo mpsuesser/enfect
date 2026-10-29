@@ -3,7 +3,7 @@
   "compilerOptions": {
     "allowImportingTsExtensions": true,
     "exactOptionalPropertyTypes": true,
-    "lib": ["ESNext", "DOM"],
+    "lib": ["ESNext"],
     "module": "Preserve",
     "moduleDetection": "force",
     "moduleResolution": "bundler",
@@ -12,12 +12,31 @@
     "noImplicitOverride": true,
     "noImplicitReturns": true,
     "noUncheckedIndexedAccess": true,
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "diagnostics": true,
+        "overrides": [
+          {
+            "include": ["packages/oxlint/src/**/*.ts"],
+            "options": {
+              "diagnosticSeverity": {
+                "floatingEffect": "error"
+              }
+            }
+          }
+        ],
+        "allowedDuplicatedPackages": ["effect"]
+      }
+    ],
+    "resolveJsonModule": true,
     "skipLibCheck": true,
     "strict": true,
     "target": "ESNext",
+    "types": ["bun"],
     "useUnknownInCatchVariables": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src", "test", "vitest.config.ts"],
-  "exclude": ["node_modules"]
+  "include": ["packages/*/src", "packages/*/test", "packages/*/scripts"],
+  "exclude": ["**/node_modules", "packages/oxlint/test/violations.ts"]
 }

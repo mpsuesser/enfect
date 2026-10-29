@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "useTabs": true,
+  "tabWidth": 4,
+  "printWidth": 80,
+  "endOfLine": "lf",
+  "singleQuote": true,
+  "arrowParens": "always",
+  "bracketSpacing": true,
+  "quoteProps": "preserve",
+  "semi": true,
+  "trailingComma": "none",
+  "ignorePatterns": [
+    "*.md",
+    "dist/",
+    "packages/core/skills/",
+    "packages/core/docs/"
+  ],
+  "overrides": [
+    {
+      "files": ["*.json", "*.jsonc"],
+      "options": { "useTabs": false, "tabWidth": 2 }
+    }
+  ]
+}

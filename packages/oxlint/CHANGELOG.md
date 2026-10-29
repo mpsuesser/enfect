@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.8.0
+
+Renamed from `@mpsuesser/oxlint-plugin-effect` and moved into the
+[Enfect](https://github.com/mpsuesser/enfect) monorepo. Publishing to JSR has
+stopped; install from npm.
+
+### Changed
+
+- Target Effect 4.0.6. The plugin now depends on `effect@4.0.6`.
+- Build with `bun build` and `tsgo`. The package now ships only `dist/`.
 
 ### Added
 

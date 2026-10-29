@@ -1,38 +1,49 @@
-import { Plugin } from "@opencode/plugin"
-import path from "node:path"
-import { fileURLToPath } from "node:url"
+import { Plugin } from '@opencode/plugin';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { loadGuidance, withPluginPolicy } from "../core/guidance.ts"
-import { loadPatterns } from "../core/pattern-catalog.ts"
-import { consumeAgentOptOut } from "./agent-policy.ts"
-import { registerPatternEnforcement } from "./enforcer.ts"
-import { loadSkills } from "./skills.ts"
+import { loadGuidance, withPluginPolicy } from '@enfect/core/guidance';
+import { loadPatterns } from '@enfect/core/pattern-catalog';
+import { consumeAgentOptOut } from './agent-policy.ts';
+import { registerPatternEnforcement } from './enforcer.ts';
+import { loadSkills } from './skills.ts';
 
-const packageDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..")
+// Bundled to dist/index.js; the build copies the shared catalogs beside dist/.
+const packageDirectory = path.resolve(
+	path.dirname(fileURLToPath(import.meta.url)),
+	'..'
+);
 
 export default Plugin.define({
-  id: "opencode.effect-enforcer",
-  setup: async (context) => {
-    const disabledAgents = new Set<unknown>()
-    const [guidance, patterns, skills] = await Promise.all([
-      loadGuidance(path.join(packageDirectory, "guidance")),
-      loadPatterns(path.join(packageDirectory, "patterns")),
-      loadSkills(path.join(packageDirectory, "skills"))
-    ])
+	id: 'enfect',
+	setup: async (context) => {
+		const disabledAgents = new Set<unknown>();
+		const [guidance, patterns, skills] = await Promise.all([
+			loadGuidance(path.join(packageDirectory, 'guidance')),
+			loadPatterns(path.join(packageDirectory, 'patterns')),
+			loadSkills(path.join(packageDirectory, 'skills'))
+		]);
 
-    await context.agent.transform((draft) => {
-      disabledAgents.clear()
-      for (const agent of draft.list()) {
-        if (consumeAgentOptOut(agent)) disabledAgents.add(agent.id)
-      }
-    })
-    await context.skill.transform((draft) => {
-      for (const skill of skills) draft.add(skill)
-    })
-    await context.session.hook("context", (event) => {
-      if (disabledAgents.has(event.agent)) return
-      event.system.push({ type: "text", text: withPluginPolicy(guidance) })
-    })
-    await registerPatternEnforcement(context, patterns, (agent) => !disabledAgents.has(agent))
-  }
-})
+		await context.agent.transform((draft) => {
+			disabledAgents.clear();
+			for (const agent of draft.list()) {
+				if (consumeAgentOptOut(agent)) disabledAgents.add(agent.id);
+			}
+		});
+		await context.skill.transform((draft) => {
+			for (const skill of skills) draft.add(skill);
+		});
+		await context.session.hook('context', (event) => {
+			if (disabledAgents.has(event.agent)) return;
+			event.system.push({
+				type: 'text',
+				text: withPluginPolicy(guidance)
+			});
+		});
+		await registerPatternEnforcement(
+			context,
+			patterns,
+			(agent) => !disabledAgents.has(agent)
+		);
+	}
+});
